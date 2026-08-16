@@ -453,7 +453,23 @@ function renderMarkdown(text) {
   const mathBlocks = [];
   let html = text;
 
-  // 1. 提取并保护块级公式 $$...$$
+  // 1. 提取并保护块级公式 \[...\]
+  html = html.replace(/\\\[([\s\S]+?)\\\]/g, (match, formula) => {
+    try {
+      const rendered = katex.renderToString(formula, {
+        displayMode: true,
+        throwOnError: false
+      });
+      const placeholder = `@@BLOCK_MATH_${mathBlocks.length}@@`;
+      mathBlocks.push({ placeholder, html: `<div class="katex-display-wrapper">${rendered}</div>` });
+      return placeholder;
+    } catch (e) {
+      console.warn("KaTeX 块级公式 \\[ 解析出错:", e);
+      return match;
+    }
+  });
+
+  // 2. 提取并保护块级公式 $$...$$
   html = html.replace(/\$\$([\s\S]+?)\$\$/g, (match, formula) => {
     try {
       const rendered = katex.renderToString(formula, {
@@ -464,12 +480,28 @@ function renderMarkdown(text) {
       mathBlocks.push({ placeholder, html: `<div class="katex-display-wrapper">${rendered}</div>` });
       return placeholder;
     } catch (e) {
-      console.warn("KaTeX 块级公式解析出错:", e);
+      console.warn("KaTeX 块级公式 $$ 解析出错:", e);
       return match;
     }
   });
 
-  // 2. 提取并保护行内公式 $...$
+  // 3. 提取并保护行内公式 \(...\)
+  html = html.replace(/\\\(([\s\S]+?)\\\)/g, (match, formula) => {
+    try {
+      const rendered = katex.renderToString(formula, {
+        displayMode: false,
+        throwOnError: false
+      });
+      const placeholder = `@@INLINE_MATH_${mathBlocks.length}@@`;
+      mathBlocks.push({ placeholder, html: rendered });
+      return placeholder;
+    } catch (e) {
+      console.warn("KaTeX 行内公式 \\( 解析出错:", e);
+      return match;
+    }
+  });
+
+  // 4. 提取并保护行内公式 $...$
   html = html.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
     try {
       const rendered = katex.renderToString(formula, {
@@ -480,12 +512,12 @@ function renderMarkdown(text) {
       mathBlocks.push({ placeholder, html: rendered });
       return placeholder;
     } catch (e) {
-      console.warn("KaTeX 行内公式解析出错:", e);
+      console.warn("KaTeX 行内公式 $ 解析出错:", e);
       return match;
     }
   });
 
-  // 3. 使用 marked 将文本解析为 Markdown HTML
+  // 5. 使用 marked 将文本解析为 Markdown HTML
   let parsedMarkdown = "";
   try {
     parsedMarkdown = marked.parse(html, {
@@ -498,7 +530,7 @@ function renderMarkdown(text) {
     parsedMarkdown = html.replace(/\n/g, "<br>");
   }
 
-  // 4. 将数学公式占位符还原回 KaTeX HTML
+  // 6. 将数学公式占位符还原回 KaTeX HTML
   mathBlocks.forEach(item => {
     parsedMarkdown = parsedMarkdown.replace(item.placeholder, item.html);
   });
