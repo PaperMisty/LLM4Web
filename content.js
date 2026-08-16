@@ -5,12 +5,12 @@ let floatingBtn = null;
 // z-index 拉满且不依赖窗口焦点，因此点击页面任何地方都不会"退到后面"。
 let overlay = null;          // 悬浮面板容器
 let overlayIframe = null;    // 面板 iframe
-let displayMode = "popup";   // popup | sidePanel | inPage
+let displayMode = "inPage";   // popup | sidePanel | inPage (inPage 为默认)
 let pendingExplainText = null; // iframe 尚未加载完成时暂存的划词文本
 
 // 读取呈现模式，inPage 模式下注入悬浮面板
 chrome.storage.local.get(["displayMode"], (res) => {
-  displayMode = res.displayMode || "popup";
+  displayMode = res.displayMode || "inPage";
   if (displayMode === "inPage") {
     ensureOverlay();
   }
@@ -19,7 +19,7 @@ chrome.storage.local.get(["displayMode"], (res) => {
 // 监听呈现模式切换，动态注入/移除悬浮面板
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === "local" && changes.displayMode) {
-    displayMode = changes.displayMode.newValue || "popup";
+    displayMode = changes.displayMode.newValue || "inPage";
     if (displayMode === "inPage") {
       ensureOverlay();
     } else {

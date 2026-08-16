@@ -179,7 +179,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 3. 从 storage 加载已保存配置
   chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model", "displayMode", "closeStrategy", "theme"], (result) => {
-    displayModeSelect.value = result.displayMode || "popup";
+    displayModeSelect.value = result.displayMode || "inPage";
     closeStrategySelect.value = result.closeStrategy || "manual";
     syncCloseStrategyState(); // 根据已保存的呈现模式同步关闭方式选项状态
     

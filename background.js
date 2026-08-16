@@ -1,10 +1,9 @@
-let popupWindowId = null;
+let popupWindowIds = new Set(); // 追踪所有打开的 popup 窗口，支持多窗口独立运行
 let lastExplainTime = 0; // 记录最近一次划词取义的触发时间戳，用于屏蔽焦点竞争导致的秒关
-let isReordering = false; // 窗口重组排布锁，防止焦点转移时死循环
 
 // 初始化呈现模式及图标点击行为
 chrome.storage.local.get(["displayMode"], (res) => {
-  updateActionBehavior(res.displayMode || "popup");
+  updateActionBehavior(res.displayMode || "inPage");
 });
 
 // 启发式判断模型是否支持推理/思考
@@ -119,14 +118,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.storage.local.set({ pendingSelection: selectedText }, () => {
       // 2. 根据当前的呈现模式，唤起主面板
       chrome.storage.local.get(["displayMode"], (res) => {
-        const mode = res.displayMode || "popup";
+        const mode = res.displayMode || "inPage";
         if (mode === "sidePanel") {
           if (sender.tab && sender.tab.id) {
             chrome.sidePanel.open({ tabId: sender.tab.id })
               .catch(err => console.error("打开侧边栏失败:", err));
           }
         } else {
-          openPopupWindow();
+          openNewPopupWindow();
         }
       });
     });
@@ -282,9 +281,9 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
-// 监听悬浮窗的尺寸与位置变动，并实时记忆
+// 监听悬浮窗的尺寸与位置变动，实时记忆（任意一个 popup 窗口改变都会保存，作为下一个新窗口的默认值）
 chrome.windows.onBoundsChanged.addListener((win) => {
-  if (win.id === popupWindowId) {
+  if (popupWindowIds.has(win.id)) {
     chrome.storage.local.set({
       popupWidth: win.width,
       popupHeight: win.height,
@@ -294,12 +293,19 @@ chrome.windows.onBoundsChanged.addListener((win) => {
   }
 });
 
+// 窗口关闭时自动从追踪集合中移除
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (popupWindowIds.has(windowId)) {
+    popupWindowIds.delete(windowId);
+  }
+});
+
 // 监听扩展图标的点击行为（针对悬浮窗口模式 / 页面内悬浮面板模式）
 chrome.action.onClicked.addListener(() => {
   chrome.storage.local.get(["displayMode"], (res) => {
-    const mode = res.displayMode || "popup";
+    const mode = res.displayMode || "inPage";
     if (mode === "popup") {
-      openPopupWindow();
+      openNewPopupWindow();
     } else if (mode === "inPage") {
       // 通知当前标签页的 content script 切换页面内悬浮面板的显示/隐藏
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -352,28 +358,15 @@ function createWindow() {
         left: left,
         top: top
       }, (win) => {
-        popupWindowId = win.id;
+        if (win) popupWindowIds.add(win.id);
       });
     });
   });
 }
 
-// 唤醒或聚焦悬浮小窗口
-function openPopupWindow() {
-  if (popupWindowId !== null) {
-    chrome.windows.get(popupWindowId, (win) => {
-      if (chrome.runtime.lastError || !win) {
-        // 窗口不存在，重新创建
-        popupWindowId = null;
-        createWindow();
-      } else {
-        // 窗口存在，聚焦到最前面
-        chrome.windows.update(popupWindowId, { focused: true });
-      }
-    });
-  } else {
-    createWindow();
-  }
+// 创建新的独立 popup 窗口（每次调用都新建，支持多窗口并行）
+function openNewPopupWindow() {
+  createWindow();
 }
 
 // 动态调整扩展图标的点击行为
@@ -383,54 +376,25 @@ function updateActionBehavior(mode) {
     .catch((error) => console.warn("动态调整侧边栏行为失败:", error));
 }
 
-// 监听窗口焦点变化事件（实现失焦自动关闭 或 失焦保持最前 逻辑）
+// 监听窗口焦点变化：失焦自动关闭（blur 策略）或什么都不做（manual 策略）
+// 不再做"抢焦点置顶"（Chrome API 不支持真正的 always-on-top），inPage 模式已彻底解决此需求
 chrome.windows.onFocusChanged.addListener((focusedWindowId) => {
-  if (isReordering) return; // 如果正在执行层级排布重排，直接拦截防止循环聚焦死锁
+  if (popupWindowIds.size === 0) return;
 
-  if (popupWindowId !== null) {
-    // 如果最近 800ms 内触发过划词，则暂时不触发任何失焦行为（保证划词弹窗流程通畅）
-    if (Date.now() - lastExplainTime < 800) {
-      return;
-    }
+  if (Date.now() - lastExplainTime < 800) return;
 
-    chrome.storage.local.get(["closeStrategy"], (res) => {
-      const strategy = res.closeStrategy || "manual";
-      if (strategy === "blur") {
-        // 1. 失焦自动关闭模式：如果新聚焦的窗口不是我们的悬浮窗，且是一个合法的其它窗口，则执行关闭
-        if (focusedWindowId !== popupWindowId && focusedWindowId !== chrome.windows.WINDOW_ID_NONE) {
-          chrome.windows.remove(popupWindowId, () => {
-            if (chrome.runtime.lastError) {
-              // 忽略可能已经被手动关闭的错误
-            }
-            popupWindowId = null;
-            console.log("悬浮窗口已由于失去焦点自动关闭");
-          });
-        }
-      } else {
-        // 2. 主动关闭模式（默认）：我们希望小窗尽量“置顶”，不退隐到大网页窗口的后面
-        // 当大浏览器窗口（focusedWindowId）重新获得焦点时，我们瞬间聚焦一下小窗将其提到层级最前面，再把焦点快速返还给大窗口
-        if (focusedWindowId !== popupWindowId && focusedWindowId !== chrome.windows.WINDOW_ID_NONE) {
-          const mainWinId = focusedWindowId;
-          isReordering = true;
-
-          // 第一步：聚焦小窗，使其窗口层级提到最上层
-          chrome.windows.update(popupWindowId, { focused: true }, () => {
-            if (chrome.runtime.lastError) {
-              isReordering = false;
-              return;
-            }
-            // 第二步：在 30 毫秒后，立刻将焦点还给大浏览器窗口，保证用户在网页内的打字交互不被打断
-            setTimeout(() => {
-              chrome.windows.update(mainWinId, { focused: true }, () => {
-                // 等待重排状态在系统调度中完全沉淀，再解除锁
-                setTimeout(() => {
-                  isReordering = false;
-                }, 100);
-              });
-            }, 30);
-          });
-        }
+  chrome.storage.local.get(["closeStrategy"], (res) => {
+    const strategy = res.closeStrategy || "manual";
+    if (strategy === "blur") {
+      if (focusedWindowId !== chrome.windows.WINDOW_ID_NONE && !popupWindowIds.has(focusedWindowId)) {
+        const idsToClose = [...popupWindowIds];
+        idsToClose.forEach((winId) => {
+          chrome.windows.remove(winId, () => { /* 忽略已关闭错误 */ });
+        });
+        popupWindowIds.clear();
+        console.log("所有悬浮窗口已由于失去焦点自动关闭");
       }
-    });
-  }
+    }
+    // manual 策略：不干预，让用户自行管理多个独立窗口
+  });
 });
