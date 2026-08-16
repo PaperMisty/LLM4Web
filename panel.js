@@ -202,14 +202,12 @@ function handleSend() {
         textContentEl.innerHTML = renderMarkdown(accumulatedContent);
       }
 
-      // 自动滚屏
-      chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+      // 去除自动滚屏逻辑以实现生成期间界面悬停
     } else if (msg.type === "DONE") {
       finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl);
     } else if (msg.type === "ERROR") {
       setStreamingState(false);
       textContentEl.innerHTML = `<span style="color: #ef4444;">⚠️ 发生错误: ${escapeHtml(msg.error)}</span>`;
-      chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
       currentPort.disconnect();
     } else if (msg.type === "ABORTED") {
       finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl, true);
@@ -296,7 +294,7 @@ function finishStreaming(content, reasoning, thoughtBoxEl, isAborted = false) {
   }
 
   chatHistory.push(responseMsg);
-  chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+  // 结束生成时保持悬停，不强制滚屏
 }
 
 // 6. UI DOM 渲染与追加
@@ -371,7 +369,7 @@ function createAssistantBubbleSkeleton() {
   };
 }
 
-// 7. 简易流式 Markdown 转换器
+// 7. 混合 Markdown 与 KaTeX 数学公式渲染器
 function escapeHtml(text) {
   return text
     .replace(/&/g, "&amp;")
@@ -382,54 +380,60 @@ function escapeHtml(text) {
 function renderMarkdown(text) {
   if (!text) return "";
 
-  // 1. 转义 HTML 预防注入
-  let escaped = escapeHtml(text);
+  const mathBlocks = [];
+  let html = text;
 
-  // 2. 解析代码块 ``` [lang] \n [code] \n ```
-  // 考虑到流式文本时代码块可能会未闭合，采用基于分割符的分段解析器
-  const parts = escaped.split("```");
-  let html = "";
-
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 0) {
-      // 偶数索引：普通文本段落
-      let segment = parts[i];
-      
-      // 行内代码: `code`
-      segment = segment.replace(/`([^`]+)`/g, "<code>$1</code>");
-      
-      // 粗体: **bold**
-      segment = segment.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-      
-      // 换行符替换为网页折行
-      segment = segment.replace(/\n/g, "<br>");
-      
-      html += segment;
-    } else {
-      // 奇数索引：代码块内容
-      let codeContent = parts[i];
-      let lang = "";
-
-      // 提取代码语言（如果是第一行）
-      const firstLineBreak = codeContent.indexOf("&lt;br&gt;"); // 因为之前已经转义过了
-      const firstLineBreakRaw = codeContent.indexOf("\n");
-      const breakIdx = firstLineBreak !== -1 ? firstLineBreak : firstLineBreakRaw;
-      
-      if (breakIdx !== -1) {
-        lang = codeContent.substring(0, breakIdx).replace(/&lt;br&gt;/g, "").trim();
-        codeContent = codeContent.substring(breakIdx + (firstLineBreak !== -1 ? 10 : 1));
-      }
-
-      // 清除代码块头尾多余的空行/换行
-      codeContent = codeContent.replace(/^(<br>|\n)+/, "").replace(/(<br>|\n)+$/, "");
-      // 还原被误替换成 <br> 的换行（部分场景下可能存在）
-      codeContent = codeContent.replace(/<br>/g, "\n").replace(/&lt;br&gt;/g, "\n");
-
-      html += `<pre><code class="language-${lang}">${codeContent}</code></pre>`;
+  // 1. 提取并保护块级公式 $$...$$
+  html = html.replace(/\$\$([\s\S]+?)\$\$/g, (match, formula) => {
+    try {
+      const rendered = katex.renderToString(formula, {
+        displayMode: true,
+        throwOnError: false
+      });
+      const placeholder = `@@BLOCK_MATH_${mathBlocks.length}@@`;
+      mathBlocks.push({ placeholder, html: `<div class="katex-display-wrapper">${rendered}</div>` });
+      return placeholder;
+    } catch (e) {
+      console.warn("KaTeX 块级公式解析出错:", e);
+      return match;
     }
+  });
+
+  // 2. 提取并保护行内公式 $...$
+  html = html.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
+    try {
+      const rendered = katex.renderToString(formula, {
+        displayMode: false,
+        throwOnError: false
+      });
+      const placeholder = `@@INLINE_MATH_${mathBlocks.length}@@`;
+      mathBlocks.push({ placeholder, html: rendered });
+      return placeholder;
+    } catch (e) {
+      console.warn("KaTeX 行内公式解析出错:", e);
+      return match;
+    }
+  });
+
+  // 3. 使用 marked 将文本解析为 Markdown HTML
+  let parsedMarkdown = "";
+  try {
+    parsedMarkdown = marked.parse(html, {
+      breaks: true,
+      gfm: true
+    });
+  } catch (e) {
+    console.error("Marked 解析出错:", e);
+    // 简易换行兜底
+    parsedMarkdown = html.replace(/\n/g, "<br>");
   }
 
-  return html;
+  // 4. 将数学公式占位符还原回 KaTeX HTML
+  mathBlocks.forEach(item => {
+    parsedMarkdown = parsedMarkdown.replace(item.placeholder, item.html);
+  });
+
+  return parsedMarkdown;
 }
 
 // 启发式判断模型是否支持推理/思考

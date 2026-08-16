@@ -536,3 +536,50 @@ input:checked + .slider:before {
   from { transform: translateY(-100%); }
   to { transform: translateY(0); }
 }
+
+/* Markdown 高级列表与表格渲染样式 */
+.message-bubble ul, .message-bubble ol {
+  margin: 6px 0 6px 20px;
+  padding-left: 0;
+}
+
+.message-bubble li {
+  margin-bottom: 4px;
+}
+
+.message-bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 12.5px;
+}
+
+.message-bubble th, .message-bubble td {
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.message-bubble th {
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.message-bubble tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* KaTeX 渲染样式微调 */
+.katex-display-wrapper {
+  overflow-x: auto;
+  padding: 6px 0;
+  margin: 8px 0;
+  width: 100%;
+}
+.katex-display {
+  margin: 0 !important;
+}
+.katex {
+  font-size: 1.1em;
+}
