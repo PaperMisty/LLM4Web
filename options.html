@@ -34,12 +34,13 @@
             <select id="display-mode" required>
               <option value="popup">悬浮小窗口 (Popup Window)</option>
               <option value="sidePanel">侧边栏模式 (Side Panel)</option>
+              <option value="inPage">页面内悬浮面板 (Floating Overlay)</option>
             </select>
           </div>
         </div>
 
         <!-- 窗口关闭策略 -->
-        <div class="form-group">
+        <div class="form-group" id="close-strategy-group">
           <label for="close-strategy">小窗口关闭方式 (Close Strategy)</label>
           <div class="select-wrapper">
             <select id="close-strategy" required>
@@ -47,6 +48,7 @@
               <option value="blur">点击其他网页空白处自动关闭</option>
             </select>
           </div>
+          <span class="help-text hidden" id="close-strategy-hint">页面内悬浮面板是网页内的一层，不依赖窗口焦点，该设置不生效。</span>
         </div>
 
         <!-- 配色主题 -->

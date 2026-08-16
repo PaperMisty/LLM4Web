@@ -8,7 +8,21 @@
 }
 
 /* 1. 柔和暖米淡黄 (默认护眼) - 浅色系 */
-:root, [data-theme="warm-amber"] {
+:root {
+  --bg-color: #fdfbf7;
+  --bg-gradient: linear-gradient(135deg, #fdfbf7 0%, #f4eee1 100%);
+  --card-bg: rgba(244, 238, 225, 0.7);
+  --card-border: rgba(180, 83, 9, 0.12);
+  --text-main: #453c2c;
+  --text-muted: #82755e;
+  --primary-color: #d97706;
+  --primary-gradient: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  --input-bg: rgba(255, 255, 255, 0.7);
+  --input-border: rgba(180, 83, 9, 0.18);
+  --input-focus: #b45309;
+}
+
+[data-theme="warm-amber"] {
   --bg-color: #fdfbf7;
   --bg-gradient: linear-gradient(135deg, #fdfbf7 0%, #f4eee1 100%);
   --card-bg: rgba(244, 238, 225, 0.7);
@@ -249,6 +263,12 @@ select option {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 4px;
+}
+
+/* 禁用态表单组（页面内悬浮面板模式下不生效的选项） */
+.form-group.disabled-option {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 /* 下拉菜单和密码栏的包装层 */

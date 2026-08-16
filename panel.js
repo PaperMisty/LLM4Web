@@ -22,7 +22,40 @@ document.addEventListener("DOMContentLoaded", () => {
   initEventListeners();
   // 检查是否有网页滑词触发的待解释文本
   setTimeout(checkPendingSelection, 100);
+  // 检测是否为页面内悬浮面板（iframe 嵌入）模式
+  if (new URLSearchParams(location.search).get("embedded") === "1") {
+    initEmbeddedMode();
+  }
 });
+
+// 嵌入模式（页面内悬浮面板）专用逻辑：
+// 1) 接收 content script 直传的划词文本；2) 头部拖拽移动整个悬浮面板
+function initEmbeddedMode() {
+  // 接收 content script 发来的划词解释请求
+  window.addEventListener("message", (e) => {
+    const data = e.data;
+    if (data && typeof data === "object" && data.type === "LLM4WEB_EXPLAIN" && typeof data.text === "string") {
+      triggerExplain(data.text);
+    }
+  });
+
+  // 头部拖拽：按下时通知父页面（content script）开始拖动面板
+  // 父页面会创建全屏遮罩接管后续鼠标事件，从而支持拖出 iframe 边界
+  const headerEl = document.querySelector(".panel-header");
+  if (headerEl) {
+    headerEl.addEventListener("mousedown", (e) => {
+      // 排除交互控件（思考开关、垃圾桶、设置、清空等按钮）
+      if (e.target.closest("button") || e.target.closest("input") || e.target.closest("label") || e.target.closest(".switch")) {
+        return;
+      }
+      e.preventDefault();
+      window.parent.postMessage(
+        { type: "LLM4WEB_DRAG_START", clientX: e.clientX, clientY: e.clientY },
+        "*"
+      );
+    });
+  }
+}
 
 // 加载 Chrome Storage 中的配置
 function loadConfig() {

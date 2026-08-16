@@ -7,7 +7,23 @@
 }
 
 /* 1. 柔和暖米淡黄 (默认护眼) - 浅色系 */
-:root, [data-theme="warm-amber"] {
+:root {
+  --bg-color: #fdfbf7;
+  --header-bg: rgba(245, 240, 226, 0.95);
+  --footer-bg: rgba(245, 240, 226, 0.95);
+  --border-color: rgba(180, 83, 9, 0.12);
+  --text-main: #453c2c;
+  --text-muted: #82755e;
+  --primary-color: #d97706;
+  --primary-gradient: linear-gradient(135deg, #d97706, #b45309);
+  --user-msg-bg: linear-gradient(135deg, #d97706, #b45309);
+  --ai-msg-bg: rgba(255, 255, 255, 0.85);
+  --thought-bg: rgba(245, 240, 225, 0.8);
+  --thought-border: rgba(217, 119, 6, 0.2);
+  --input-bg: rgba(255, 255, 255, 0.7);
+}
+
+[data-theme="warm-amber"] {
   --bg-color: #fdfbf7;
   --header-bg: rgba(245, 240, 226, 0.95);
   --footer-bg: rgba(245, 240, 226, 0.95);

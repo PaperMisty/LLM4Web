@@ -1,5 +1,6 @@
 let popupWindowId = null;
 let lastExplainTime = 0; // 记录最近一次划词取义的触发时间戳，用于屏蔽焦点竞争导致的秒关
+let isReordering = false; // 窗口重组排布锁，防止焦点转移时死循环
 
 // 初始化呈现模式及图标点击行为
 chrome.storage.local.get(["displayMode"], (res) => {
@@ -293,12 +294,23 @@ chrome.windows.onBoundsChanged.addListener((win) => {
   }
 });
 
-// 监听扩展图标的点击行为（针对悬浮窗口模式）
+// 监听扩展图标的点击行为（针对悬浮窗口模式 / 页面内悬浮面板模式）
 chrome.action.onClicked.addListener(() => {
   chrome.storage.local.get(["displayMode"], (res) => {
     const mode = res.displayMode || "popup";
     if (mode === "popup") {
       openPopupWindow();
+    } else if (mode === "inPage") {
+      // 通知当前标签页的 content script 切换页面内悬浮面板的显示/隐藏
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          chrome.tabs.sendMessage(tabs[0].id, { type: "TOGGLE_OVERLAY" }, () => {
+            if (chrome.runtime.lastError) {
+              // 当前页面不支持注入（如 chrome:// 等受保护页面），静默忽略
+            }
+          });
+        }
+      });
     }
   });
 });
@@ -371,25 +383,51 @@ function updateActionBehavior(mode) {
     .catch((error) => console.warn("动态调整侧边栏行为失败:", error));
 }
 
-// 监听窗口焦点变化事件（实现失焦自动关闭悬浮窗逻辑）
+// 监听窗口焦点变化事件（实现失焦自动关闭 或 失焦保持最前 逻辑）
 chrome.windows.onFocusChanged.addListener((focusedWindowId) => {
+  if (isReordering) return; // 如果正在执行层级排布重排，直接拦截防止循环聚焦死锁
+
   if (popupWindowId !== null) {
-    // 如果最近 800ms 内触发过划词，则不触发失焦关闭（因为点击网页按钮会导致焦点转到网页，属合理失焦）
+    // 如果最近 800ms 内触发过划词，则暂时不触发任何失焦行为（保证划词弹窗流程通畅）
     if (Date.now() - lastExplainTime < 800) {
       return;
     }
+
     chrome.storage.local.get(["closeStrategy"], (res) => {
       const strategy = res.closeStrategy || "manual";
       if (strategy === "blur") {
-        // 如果新聚焦的窗口不是我们的悬浮窗，则执行关闭
-        if (focusedWindowId !== popupWindowId) {
+        // 1. 失焦自动关闭模式：如果新聚焦的窗口不是我们的悬浮窗，且是一个合法的其它窗口，则执行关闭
+        if (focusedWindowId !== popupWindowId && focusedWindowId !== chrome.windows.WINDOW_ID_NONE) {
           chrome.windows.remove(popupWindowId, () => {
-            // 捕获异常以防窗口已被手动关闭
             if (chrome.runtime.lastError) {
-              // 忽略
+              // 忽略可能已经被手动关闭的错误
             }
             popupWindowId = null;
             console.log("悬浮窗口已由于失去焦点自动关闭");
+          });
+        }
+      } else {
+        // 2. 主动关闭模式（默认）：我们希望小窗尽量“置顶”，不退隐到大网页窗口的后面
+        // 当大浏览器窗口（focusedWindowId）重新获得焦点时，我们瞬间聚焦一下小窗将其提到层级最前面，再把焦点快速返还给大窗口
+        if (focusedWindowId !== popupWindowId && focusedWindowId !== chrome.windows.WINDOW_ID_NONE) {
+          const mainWinId = focusedWindowId;
+          isReordering = true;
+
+          // 第一步：聚焦小窗，使其窗口层级提到最上层
+          chrome.windows.update(popupWindowId, { focused: true }, () => {
+            if (chrome.runtime.lastError) {
+              isReordering = false;
+              return;
+            }
+            // 第二步：在 30 毫秒后，立刻将焦点还给大浏览器窗口，保证用户在网页内的打字交互不被打断
+            setTimeout(() => {
+              chrome.windows.update(mainWinId, { focused: true }, () => {
+                // 等待重排状态在系统调度中完全沉淀，再解除锁
+                setTimeout(() => {
+                  isReordering = false;
+                }, 100);
+              });
+            }, 30);
           });
         }
       }

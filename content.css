@@ -44,3 +44,86 @@
     opacity: 1;
   }
 }
+
+/* ================= 页面内悬浮面板 (inPage 模式) ================= */
+.llm4web-overlay {
+  position: fixed !important;
+  right: 16px;
+  top: 72px;
+  width: 380px;
+  height: 640px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 40px);
+  z-index: 2147483647 !important;
+  display: none;
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  border-radius: 14px;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.llm4web-overlay.llm4web-overlay-visible {
+  display: block;
+  animation: llm4web-overlay-in 0.18s ease;
+}
+
+.llm4web-overlay iframe.llm4web-overlay-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: transparent;
+}
+
+/* 关闭按钮：悬停面板时在右上角浮现 */
+.llm4web-overlay-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  padding: 0;
+}
+
+.llm4web-overlay:hover .llm4web-overlay-close {
+  opacity: 1;
+}
+
+.llm4web-overlay-close:hover {
+  background: rgba(239, 68, 68, 0.9);
+}
+
+/* 拖动时的全屏透明遮罩：接管鼠标事件，实现跨 iframe 边界的流畅拖动 */
+.llm4web-drag-mask {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  cursor: grabbing !important;
+  background: transparent;
+}
+
+@keyframes llm4web-overlay-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

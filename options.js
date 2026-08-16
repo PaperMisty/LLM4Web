@@ -69,6 +69,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  // 1.5 呈现模式联动：页面内悬浮面板模式不依赖窗口焦点，禁用"关闭方式"设置
+  const closeStrategyGroup = document.getElementById("close-strategy-group");
+  const closeStrategyHint = document.getElementById("close-strategy-hint");
+  const syncCloseStrategyState = () => {
+    const isInPage = displayModeSelect.value === "inPage";
+    closeStrategySelect.disabled = isInPage;
+    closeStrategyGroup.classList.toggle("disabled-option", isInPage);
+    closeStrategyHint.classList.toggle("hidden", !isInPage);
+  };
+  displayModeSelect.addEventListener("change", syncCloseStrategyState);
+
   // 2. 动态更新模型推荐和默认 URL
   const updateModelSuggestions = (provider, changeUrl = true, modelToSelect = null) => {
     modelSelect.innerHTML = "";
@@ -170,6 +181,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model", "displayMode", "closeStrategy", "theme"], (result) => {
     displayModeSelect.value = result.displayMode || "popup";
     closeStrategySelect.value = result.closeStrategy || "manual";
+    syncCloseStrategyState(); // 根据已保存的呈现模式同步关闭方式选项状态
     
     const currentTheme = result.theme || "warm-amber";
     themeSelectSelect.value = currentTheme;
@@ -177,7 +189,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     
     const savedProvider = result.provider || "siliconflow";
     providerSelect.value = savedProvider;
-    
     baseUrlInput.value = result.baseUrl || PRESETS[savedProvider].defaultUrl;
     apiKeyInput.value = result.apiKey || "";
 
