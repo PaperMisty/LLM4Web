@@ -9,6 +9,7 @@
 
 /* 1. 柔和暖米淡黄 (默认护眼) - 浅色系 */
 :root {
+  color-scheme: light;
   --bg-color: #fdfbf7;
   --bg-gradient: linear-gradient(135deg, #fdfbf7 0%, #f4eee1 100%);
   --card-bg: rgba(244, 238, 225, 0.7);
@@ -23,6 +24,7 @@
 }
 
 [data-theme="warm-amber"] {
+  color-scheme: light;
   --bg-color: #fdfbf7;
   --bg-gradient: linear-gradient(135deg, #fdfbf7 0%, #f4eee1 100%);
   --card-bg: rgba(244, 238, 225, 0.7);
@@ -38,6 +40,7 @@
 
 /* 2. 极简质感银白 - 浅色系 */
 [data-theme="silver-white"] {
+  color-scheme: light;
   --bg-color: #f3f4f6;
   --bg-gradient: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
   --card-bg: rgba(255, 255, 255, 0.55);
@@ -53,61 +56,65 @@
 
 /* 3. 极光数码科技青 - 深色系 */
 [data-theme="cyber-cyan"] {
+  color-scheme: dark;
   --bg-color: #070a13;
   --bg-gradient: linear-gradient(135deg, #070a13 0%, #111827 100%);
-  --card-bg: rgba(17, 24, 39, 0.7);
-  --card-border: rgba(255, 255, 255, 0.08);
+  --card-bg: rgba(17, 24, 39, 0.85);
+  --card-border: rgba(255, 255, 255, 0.12);
   --text-main: #f3f4f6;
   --text-muted: #9ca3af;
   --primary-color: #3b82f6;
   --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
-  --input-bg: rgba(15, 23, 42, 0.6);
-  --input-border: rgba(255, 255, 255, 0.1);
+  --input-bg: rgba(15, 23, 42, 0.85);
+  --input-border: rgba(255, 255, 255, 0.15);
   --input-focus: #3b82f6;
 }
 
 /* 4. 浪漫薰衣草紫 - 深色系 */
 [data-theme="lavender-purple"] {
+  color-scheme: dark;
   --bg-color: #0b0914;
   --bg-gradient: linear-gradient(135deg, #0b0914 0%, #19142d 100%);
-  --card-bg: rgba(25, 20, 45, 0.65);
-  --card-border: rgba(255, 255, 255, 0.07);
+  --card-bg: rgba(25, 20, 45, 0.85);
+  --card-border: rgba(255, 255, 255, 0.1);
   --text-main: #f1f0f7;
   --text-muted: #9f9bb5;
   --primary-color: #a855f7;
   --primary-gradient: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
-  --input-bg: rgba(18, 14, 32, 0.6);
-  --input-border: rgba(168, 85, 247, 0.2);
+  --input-bg: rgba(18, 14, 32, 0.85);
+  --input-border: rgba(168, 85, 247, 0.3);
   --input-focus: #a855f7;
 }
 
 /* 5. 优雅深林黛绿 - 深色系 */
 [data-theme="forest-green"] {
+  color-scheme: dark;
   --bg-color: #050c09;
   --bg-gradient: linear-gradient(135deg, #050c09 0%, #0d1f17 100%);
-  --card-bg: rgba(13, 31, 23, 0.65);
-  --card-border: rgba(255, 255, 255, 0.07);
+  --card-bg: rgba(13, 31, 23, 0.85);
+  --card-border: rgba(255, 255, 255, 0.1);
   --text-main: #ecfdf5;
   --text-muted: #86efac;
   --primary-color: #10b981;
   --primary-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  --input-bg: rgba(8, 20, 15, 0.6);
-  --input-border: rgba(16, 185, 129, 0.2);
+  --input-bg: rgba(8, 20, 15, 0.85);
+  --input-border: rgba(16, 185, 129, 0.3);
   --input-focus: #10b981;
 }
 
 /* 6. 经典深邃磨砂黑 - 深色系 */
 [data-theme="classic-dark"] {
+  color-scheme: dark;
   --bg-color: #121212;
   --bg-gradient: linear-gradient(135deg, #121212 0%, #1c1c1c 100%);
-  --card-bg: rgba(28, 28, 28, 0.7);
-  --card-border: rgba(255, 255, 255, 0.06);
+  --card-bg: rgba(28, 28, 28, 0.85);
+  --card-border: rgba(255, 255, 255, 0.1);
   --text-main: #e0e0e0;
   --text-muted: #9e9e9e;
   --primary-color: #ffffff;
   --primary-gradient: linear-gradient(135deg, #7c7c7c 0%, #3a3a3a 100%);
-  --input-bg: rgba(18, 18, 18, 0.6);
-  --input-border: rgba(255, 255, 255, 0.08);
+  --input-bg: rgba(24, 24, 24, 0.85);
+  --input-border: rgba(255, 255, 255, 0.12);
   --input-focus: #ffffff;
 }
 
