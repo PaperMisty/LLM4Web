@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM4Web AI 助手设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <img src="icons/icon-48.png" alt="Logo" class="logo-img">
+        <h1 class="title">AI Assistant Settings</h1>
+      </div>
+      <p class="subtitle">配置您的 API 提供商、密钥和模型，支持流式渲染与思考过程展示</p>
+    </header>
+
+    <main class="settings-card">
+      <!-- 快捷导入面板 -->
+      <div id="env-banner" class="env-banner hidden">
+        <div class="env-banner-text">
+          <span class="sparkle">✨</span>
+          <span>检测到本地 <code>.env</code> 测试文件，可一键导入配置！</span>
+        </div>
+        <button id="btn-import-env" class="btn-secondary">一键导入</button>
+      </div>
+
+      <form id="settings-form">
+        <!-- 接口提供商 -->
+        <div class="form-group">
+          <label for="provider">API 提供商</label>
+          <div class="select-wrapper">
+            <select id="provider" required>
+              <option value="siliconflow">硅基流动 (SiliconFlow)</option>
+              <option value="deepseek">DeepSeek 官方</option>
+              <option value="custom">自定义 (Custom OpenAI-compatible)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Base URL -->
+        <div class="form-group">
+          <label for="base-url">API Base URL</label>
+          <input type="url" id="base-url" placeholder="https://api.siliconflow.cn/v1" required>
+        </div>
+
+        <!-- API Key -->
+        <div class="form-group">
+          <label for="api-key">API Key (密钥)</label>
+          <div class="input-password-wrapper">
+            <input type="password" id="api-key" placeholder="输入您的 API Key" required>
+            <button type="button" id="toggle-password" class="password-toggle-btn" title="显示/隐藏">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Model -->
+        <div class="form-group">
+          <label for="model">模型 (Model Name)</label>
+          <div class="input-suggest-wrapper">
+            <input type="text" id="model" list="model-list" placeholder="选择或输入模型名称，例如 deepseek-ai/DeepSeek-R1" required>
+            <datalist id="model-list">
+              <!-- 动态根据 Provider 插入 -->
+            </datalist>
+          </div>
+          <span class="help-text">支持选择下拉推荐，也可以直接手动输入任意兼容模型。</span>
+        </div>
+
+        <!-- 提交区域 -->
+        <div class="form-actions">
+          <button type="submit" id="btn-save" class="btn-primary">
+            <span>保存配置</span>
+            <div class="spinner hidden"></div>
+          </button>
+        </div>
+      </form>
+    </main>
+
+    <!-- 浮动提示通知 -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

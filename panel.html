@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM4Web AI 助手</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <div class="panel-container">
+    <!-- 头部栏 -->
+    <header class="panel-header">
+      <div class="header-left">
+        <img src="icons/icon-16.png" alt="Icon" class="header-logo">
+        <div class="header-info">
+          <span class="header-title">LLM4Web AI</span>
+          <span id="model-status" class="model-badge">未配置</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <!-- 思考模式开关 -->
+        <div class="toggle-container" id="thinking-toggle-container" title="开启/关闭 DeepSeek 模型的思考过程">
+          <span class="toggle-label">思考</span>
+          <label class="switch">
+            <input type="checkbox" id="cb-thinking" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+        <!-- 垃圾桶一键清空 -->
+        <button id="btn-clear" class="icon-btn" title="清除对话">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            <line x1="10" y1="11" x2="10" y2="17"></line>
+            <line x1="14" y1="11" x2="14" y2="17"></line>
+          </svg>
+        </button>
+        <!-- 设置跳转 -->
+        <button id="btn-settings" class="icon-btn" title="打开设置">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 配置缺失提示面板 -->
+    <div id="setup-warning" class="setup-warning hidden">
+      <p>⚠️ 尚未配置 API 密钥或提供商。</p>
+      <button id="btn-go-to-settings" class="btn-warning">前往设置</button>
+    </div>
+
+    <!-- 聊天内容区 -->
+    <main class="chat-area" id="chat-history">
+      <!-- 欢迎词 -->
+      <div class="welcome-container" id="welcome-view">
+        <div class="welcome-icon">💬</div>
+        <h3>开启您的轻量 AI 对话</h3>
+        <p>支持 SiliconFlow 与 DeepSeek 官方流式渲染。支持 DeepSeek-R1 模型的思考过程展示。</p>
+        <div class="quick-tips">
+          <div class="tip-card" data-prompt="帮我用 JavaScript 写一个防抖函数。">
+            <span>💻 写一段 JavaScript 代码</span>
+          </div>
+          <div class="tip-card" data-prompt="DeepSeek-R1 模型和 V3 模型的主要区别是什么？">
+            <span>🤔 问一个概念问题</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 底部输入区 -->
+    <footer class="panel-footer">
+      <div class="input-card">
+        <textarea id="chat-input" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
+        
+        <button id="btn-send" class="send-btn" title="发送">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="send-icon">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="stop-icon hidden">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          </svg>
+        </button>
+      </div>
+    </footer>
+  </div>
+  <script src="panel.js"></script>
+</body>
+</html>
