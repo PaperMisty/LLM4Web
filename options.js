@@ -39,6 +39,8 @@ let envConfig = null; // 用于缓存解析出来的 .env 配置
 
 document.addEventListener("DOMContentLoaded", async () => {
   const displayModeSelect = document.getElementById("display-mode");
+  const closeStrategySelect = document.getElementById("close-strategy");
+  const themeSelectSelect = document.getElementById("theme-select");
   const providerSelect = document.getElementById("provider");
   const baseUrlInput = document.getElementById("base-url");
   const apiKeyInput = document.getElementById("api-key");
@@ -165,8 +167,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // 3. 从 storage 加载已保存配置
-  chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model", "displayMode"], (result) => {
+  chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model", "displayMode", "closeStrategy", "theme"], (result) => {
     displayModeSelect.value = result.displayMode || "popup";
+    closeStrategySelect.value = result.closeStrategy || "manual";
+    
+    const currentTheme = result.theme || "warm-amber";
+    themeSelectSelect.value = currentTheme;
+    document.documentElement.setAttribute("data-theme", currentTheme);
     
     const savedProvider = result.provider || "siliconflow";
     providerSelect.value = savedProvider;
@@ -176,6 +183,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const savedModel = result.model || PRESETS[savedProvider].defaultModel;
     updateModelSuggestions(savedProvider, false, savedModel);
+  });
+
+  // 绑定实时换肤
+  themeSelectSelect.addEventListener("change", (e) => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
   });
 
   // 4. 尝试加载本地 .env 文件
@@ -371,6 +383,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     e.preventDefault();
 
     const displayMode = displayModeSelect.value;
+    const closeStrategy = closeStrategySelect.value;
+    const theme = themeSelectSelect.value;
     const provider = providerSelect.value;
     const baseUrl = baseUrlInput.value.trim();
     const apiKey = apiKeyInput.value.trim();
@@ -388,6 +402,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const settings = {
       displayMode,
+      closeStrategy,
+      theme,
       provider,
       baseUrl,
       apiKey,

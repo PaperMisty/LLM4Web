@@ -1,4 +1,5 @@
 let popupWindowId = null;
+let lastExplainTime = 0; // 记录最近一次划词取义的触发时间戳，用于屏蔽焦点竞争导致的秒关
 
 // 初始化呈现模式及图标点击行为
 chrome.storage.local.get(["displayMode"], (res) => {
@@ -111,6 +112,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === "EXPLAIN_TEXT") {
+    lastExplainTime = Date.now(); // 记录当前时间，挂起失焦自动关闭
     const selectedText = request.text;
     // 1. 将选中文本写入 storage 暂存
     chrome.storage.local.set({ pendingSelection: selectedText }, () => {
@@ -368,3 +370,29 @@ function updateActionBehavior(mode) {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: isSidePanel })
     .catch((error) => console.warn("动态调整侧边栏行为失败:", error));
 }
+
+// 监听窗口焦点变化事件（实现失焦自动关闭悬浮窗逻辑）
+chrome.windows.onFocusChanged.addListener((focusedWindowId) => {
+  if (popupWindowId !== null) {
+    // 如果最近 800ms 内触发过划词，则不触发失焦关闭（因为点击网页按钮会导致焦点转到网页，属合理失焦）
+    if (Date.now() - lastExplainTime < 800) {
+      return;
+    }
+    chrome.storage.local.get(["closeStrategy"], (res) => {
+      const strategy = res.closeStrategy || "manual";
+      if (strategy === "blur") {
+        // 如果新聚焦的窗口不是我们的悬浮窗，则执行关闭
+        if (focusedWindowId !== popupWindowId) {
+          chrome.windows.remove(popupWindowId, () => {
+            // 捕获异常以防窗口已被手动关闭
+            if (chrome.runtime.lastError) {
+              // 忽略
+            }
+            popupWindowId = null;
+            console.log("悬浮窗口已由于失去焦点自动关闭");
+          });
+        }
+      }
+    });
+  }
+});

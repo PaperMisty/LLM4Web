@@ -26,9 +26,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // 加载 Chrome Storage 中的配置
 function loadConfig() {
-  chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model", "enableThinking"], (result) => {
+  chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model", "enableThinking", "theme"], (result) => {
     appConfig = result;
     
+    // 应用主题换肤（默认为 warm-amber 淡黄）
+    const theme = result.theme || "warm-amber";
+    document.documentElement.setAttribute("data-theme", theme);
+
     // 如果没有配置过的“思考”开关状态，默认设为开启
     const enableThinking = result.enableThinking !== false;
     cbThinkingEl.checked = enableThinking;
