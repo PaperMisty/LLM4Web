@@ -61,12 +61,12 @@
 
         <!-- Model -->
         <div class="form-group">
-          <label for="model">模型 (Model Name)</label>
-          <div class="input-suggest-wrapper">
-            <input type="text" id="model" list="model-list" placeholder="选择或输入模型名称，例如 deepseek-ai/DeepSeek-R1" required>
-            <datalist id="model-list">
-              <!-- 动态根据 Provider 插入 -->
-            </datalist>
+          <label for="model-select">模型 (Model Name)</label>
+          <div class="input-suggest-wrapper" style="display: flex; flex-direction: column; gap: 8px;">
+            <select id="model-select" required>
+              <!-- 动态根据 Provider 插入，且最末包含“自定义输入...”项 -->
+            </select>
+            <input type="text" id="model-custom" class="hidden" placeholder="请输入自定义模型名称，例如 deepseek-v4-pro" required>
           </div>
           <div class="model-action-buttons">
             <button type="button" id="btn-fetch-models" class="btn-secondary-action" title="拉取当前配置下服务商提供的所有模型">

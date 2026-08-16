@@ -60,6 +60,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const { apiKey, baseUrl, model } = request;
     const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
 
+    // 构建极简连接测试包
+    const requestBody = {
+      model: model,
+      messages: [{ role: "user", content: "." }],
+      max_tokens: 1,
+      stream: false
+    };
+
+    // 默认开启思考以探测返回数据中是否包含推理特征
+    if (isThinkingSupported(model)) {
+      if (request.provider === "deepseek") {
+        requestBody.thinking = { type: "enabled" };
+      } else {
+        requestBody.enable_thinking = true;
+      }
+    }
+
     // 发送极其简短的单 token 测算，将消耗控制在最低且反应迅速
     fetch(url, {
       method: "POST",
@@ -67,12 +84,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`
       },
-      body: JSON.stringify({
-        model: model,
-        messages: [{ role: "user", content: "." }],
-        max_tokens: 1,
-        stream: false
-      })
+      body: JSON.stringify(requestBody)
     })
       .then(async res => {
         const text = await res.text();
@@ -121,14 +133,18 @@ chrome.runtime.onConnect.addListener((port) => {
         };
 
         // API 提供商适配逻辑
-        if (provider === "siliconflow") {
-          // 如果该模型可能支持思考
+        if (provider === "deepseek") {
+          // DeepSeek 官方接口：新版 V4 等模型采用顶级 thinking 参数字典控制
           if (isThinkingSupported(model)) {
-            requestBody.enable_thinking = enableThinking; // 显式传递 true 或 false
+            requestBody.thinking = {
+              type: enableThinking ? "enabled" : "disabled"
+            };
           }
-        } else if (provider === "deepseek") {
-          // DeepSeek 官方接口由模型本身控制（deepseek-reasoner 输出思考，deepseek-chat 不输出）
-          // 故不传递 enable_thinking，避免引发参数报错
+        } else if (provider === "siliconflow") {
+          // 硅基流动平台继续使用原本有效的 enable_thinking 参数控制
+          if (isThinkingSupported(model)) {
+            requestBody.enable_thinking = enableThinking;
+          }
         } else {
           // 自定义提供商兼容
           if (isThinkingSupported(model)) {

@@ -18,7 +18,9 @@ const PRESETS = {
     defaultModel: "deepseek-reasoner",
     models: [
       "deepseek-reasoner",
-      "deepseek-chat"
+      "deepseek-chat",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash"
     ]
   },
   custom: {
@@ -39,8 +41,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const providerSelect = document.getElementById("provider");
   const baseUrlInput = document.getElementById("base-url");
   const apiKeyInput = document.getElementById("api-key");
-  const modelInput = document.getElementById("model");
-  const modelList = document.getElementById("model-list");
+  const modelSelect = document.getElementById("model-select");
+  const modelCustom = document.getElementById("model-custom");
   const togglePasswordBtn = document.getElementById("toggle-password");
   const settingsForm = document.getElementById("settings-form");
   const envBanner = document.getElementById("env-banner");
@@ -65,20 +67,48 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // 2. 动态更新模型推荐和默认 URL
-  const updateModelSuggestions = (provider, changeUrl = true) => {
-    modelList.innerHTML = "";
+  const updateModelSuggestions = (provider, changeUrl = true, modelToSelect = null) => {
+    modelSelect.innerHTML = "";
     const preset = PRESETS[provider];
     if (!preset) return;
 
-    // 填充推荐列表
+    // 填充下拉选项
     preset.models.forEach(modelName => {
       const option = document.createElement("option");
       option.value = modelName;
-      modelList.appendChild(option);
+      option.textContent = modelName;
+      modelSelect.appendChild(option);
     });
 
+    // 塞入“自定义输入...”项
+    const customOpt = document.createElement("option");
+    customOpt.value = "__custom__";
+    customOpt.textContent = "⚙️ 自定义输入...";
+    modelSelect.appendChild(customOpt);
+
+    // 默认高亮及显示逻辑
+    if (modelToSelect) {
+      const exists = preset.models.includes(modelToSelect);
+      if (exists) {
+        modelSelect.value = modelToSelect;
+        modelCustom.classList.add("hidden");
+        modelCustom.required = false;
+        modelCustom.value = "";
+      } else {
+        modelSelect.value = "__custom__";
+        modelCustom.classList.remove("hidden");
+        modelCustom.required = true;
+        modelCustom.value = modelToSelect;
+      }
+    } else {
+      // 默认选中 Preset 中的第一个默认值
+      modelSelect.value = preset.defaultModel;
+      modelCustom.classList.add("hidden");
+      modelCustom.required = false;
+      modelCustom.value = "";
+    }
+
     if (changeUrl) {
-      // 检查是否有缓存的 env 配置，有的话优先使用 env 里的配置，否则使用默认值
       if (envConfig) {
         if (provider === "siliconflow" && envConfig.siliconflow_url) {
           baseUrlInput.value = envConfig.siliconflow_url;
@@ -92,6 +122,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       baseUrlInput.value = preset.defaultUrl;
     }
   };
+
+  // 监听模型 Select 改变
+  modelSelect.addEventListener("change", (e) => {
+    if (e.target.value === "__custom__") {
+      modelCustom.classList.remove("hidden");
+      modelCustom.required = true;
+      modelCustom.focus();
+    } else {
+      modelCustom.classList.add("hidden");
+      modelCustom.required = false;
+      modelCustom.value = "";
+    }
+  });
 
   // 监听 Provider 改变
   providerSelect.addEventListener("change", (e) => {
@@ -114,11 +157,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (result[`url_${provider}`]) {
           baseUrlInput.value = result[`url_${provider}`];
         }
-        if (result[`model_${provider}`]) {
-          modelInput.value = result[`model_${provider}`];
-        } else {
-          modelInput.value = PRESETS[provider].defaultModel;
-        }
+        const savedModel = result[`model_${provider}`] || PRESETS[provider].defaultModel;
+        updateModelSuggestions(provider, false, savedModel);
       });
     }
   });
@@ -127,11 +167,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model"], (result) => {
     const savedProvider = result.provider || "siliconflow";
     providerSelect.value = savedProvider;
-    updateModelSuggestions(savedProvider, false);
-
+    
     baseUrlInput.value = result.baseUrl || PRESETS[savedProvider].defaultUrl;
     apiKeyInput.value = result.apiKey || "";
-    modelInput.value = result.model || PRESETS[savedProvider].defaultModel;
+
+    const savedModel = result.model || PRESETS[savedProvider].defaultModel;
+    updateModelSuggestions(savedProvider, false, savedModel);
   });
 
   // 4. 尝试加载本地 .env 文件
@@ -152,7 +193,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       }
 
-      // 如果解析出至少一个 key，显示导入横幅
       if (parsedEnv.siliconflow_dsv4 || parsedEnv.deepseek_key) {
         envConfig = parsedEnv;
         envBanner.classList.remove("hidden");
@@ -169,7 +209,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const currentProvider = providerSelect.value;
     let importedCount = 0;
 
-    // 先在 storage 中持久化存储 env 中的值，方便切换时读取
     const dataToSave = {};
     if (envConfig.siliconflow_dsv4) {
       dataToSave.key_siliconflow = envConfig.siliconflow_dsv4;
@@ -181,30 +220,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     chrome.storage.local.set(dataToSave, () => {
-      // 填充当前界面的输入框
       if (currentProvider === "siliconflow" && envConfig.siliconflow_dsv4) {
         apiKeyInput.value = envConfig.siliconflow_dsv4;
         if (envConfig.siliconflow_url) baseUrlInput.value = envConfig.siliconflow_url;
+        updateModelSuggestions("siliconflow", false, PRESETS.siliconflow.defaultModel);
         importedCount++;
       } else if (currentProvider === "deepseek" && envConfig.deepseek_key) {
         apiKeyInput.value = envConfig.deepseek_key;
         if (envConfig.deepseek_url) baseUrlInput.value = envConfig.deepseek_url;
+        updateModelSuggestions("deepseek", false, PRESETS.deepseek.defaultModel);
         importedCount++;
       } else {
-        // 如果当前 provider 没有配置，但另一个有，可以自动切换
         if (envConfig.siliconflow_dsv4 && currentProvider !== "siliconflow") {
           providerSelect.value = "siliconflow";
-          updateModelSuggestions("siliconflow", false);
           apiKeyInput.value = envConfig.siliconflow_dsv4;
           baseUrlInput.value = envConfig.siliconflow_url || PRESETS.siliconflow.defaultUrl;
-          modelInput.value = PRESETS.siliconflow.defaultModel;
+          updateModelSuggestions("siliconflow", false, PRESETS.siliconflow.defaultModel);
           importedCount++;
         } else if (envConfig.deepseek_key && currentProvider !== "deepseek") {
           providerSelect.value = "deepseek";
-          updateModelSuggestions("deepseek", false);
           apiKeyInput.value = envConfig.deepseek_key;
           baseUrlInput.value = envConfig.deepseek_url || PRESETS.deepseek.defaultUrl;
-          modelInput.value = PRESETS.deepseek.defaultModel;
+          updateModelSuggestions("deepseek", false, PRESETS.deepseek.defaultModel);
           importedCount++;
         }
       }
@@ -246,12 +283,35 @@ document.addEventListener("DOMContentLoaded", async () => {
       textSpan.innerText = "🔄 拉取可用模型";
 
       if (response && response.success) {
-        modelList.innerHTML = "";
+        const currentSelected = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
+        
+        // 重新填充下拉框
+        modelSelect.innerHTML = "";
         response.models.forEach(modelId => {
           const option = document.createElement("option");
           option.value = modelId;
-          modelList.appendChild(option);
+          option.textContent = modelId;
+          modelSelect.appendChild(option);
         });
+
+        // 重新塞入自定义选项
+        const customOpt = document.createElement("option");
+        customOpt.value = "__custom__";
+        customOpt.textContent = "⚙️ 自定义输入...";
+        modelSelect.appendChild(customOpt);
+
+        // 如果刚才选中的值在拉取到的新列表中，保持选中，否则归为自定义
+        if (response.models.includes(currentSelected)) {
+          modelSelect.value = currentSelected;
+          modelCustom.classList.add("hidden");
+          modelCustom.required = false;
+        } else {
+          modelSelect.value = "__custom__";
+          modelCustom.classList.remove("hidden");
+          modelCustom.required = true;
+          modelCustom.value = currentSelected;
+        }
+
         showToast(`✅ 成功拉取并更新了 ${response.models.length} 个模型！`);
       } else {
         showToast(`❌ 拉取失败: ${response ? response.error : "未知错误"}`);
@@ -262,8 +322,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   btnTestModel.addEventListener("click", () => {
     const apiKey = apiKeyInput.value.trim();
     const baseUrl = baseUrlInput.value.trim();
-    const model = modelInput.value.trim();
     const provider = providerSelect.value;
+    const model = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
 
     if (!apiKey || !baseUrl || !model) {
       showToast("⚠️ 请先填写完整 API Key、Base URL 以及模型名称");
@@ -280,7 +340,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       type: "TEST_CONNECTION",
       apiKey,
       baseUrl,
-      model
+      model,
+      provider // 必须加上 provider 参数
     }, (response) => {
       btnTestModel.disabled = false;
       spinner.classList.add("hidden");
@@ -288,7 +349,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (response && response.success) {
         const supportThinking = response.supportThinking;
-        // 将测试出的推理支持状态存储起来，用于 Panel 面板动态展现思考开关
         const storageKey = `support_thinking_${provider}_${model}`;
         chrome.storage.local.set({ [storageKey]: supportThinking }, () => {
           if (supportThinking) {
@@ -310,14 +370,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     const provider = providerSelect.value;
     const baseUrl = baseUrlInput.value.trim();
     const apiKey = apiKeyInput.value.trim();
-    const model = modelInput.value.trim();
+    const model = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
+
+    if (modelSelect.value === "__custom__" && !model) {
+      showToast("⚠️ 自定义模型名称不能为空");
+      return;
+    }
 
     const btnSave = document.getElementById("btn-save");
     const spinner = btnSave.querySelector(".spinner");
     btnSave.disabled = true;
     spinner.classList.remove("hidden");
 
-    // 保存主配置，以及对应的 Provider 独立缓存，防止切换 Provider 时配置丢失
     const settings = {
       provider,
       baseUrl,
