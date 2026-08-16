@@ -1,7 +1,9 @@
-// 开启点击图标打开 Side Panel
-chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch((error) => console.error("设置侧边栏行为失败:", error));
+let popupWindowId = null;
+
+// 初始化呈现模式及图标点击行为
+chrome.storage.local.get(["displayMode"], (res) => {
+  updateActionBehavior(res.displayMode || "popup");
+});
 
 // 启发式判断模型是否支持推理/思考
 function isThinkingSupported(modelName) {
@@ -106,6 +108,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
 
     return true; // 保持异步响应通道
+  }
+
+  if (request.type === "EXPLAIN_TEXT") {
+    const selectedText = request.text;
+    // 1. 将选中文本写入 storage 暂存
+    chrome.storage.local.set({ pendingSelection: selectedText }, () => {
+      // 2. 根据当前的呈现模式，唤起主面板
+      chrome.storage.local.get(["displayMode"], (res) => {
+        const mode = res.displayMode || "popup";
+        if (mode === "sidePanel") {
+          if (sender.tab && sender.tab.id) {
+            chrome.sidePanel.open({ tabId: sender.tab.id })
+              .catch(err => console.error("打开侧边栏失败:", err));
+          }
+        } else {
+          openPopupWindow();
+        }
+      });
+    });
+    sendResponse({ success: true });
+    return true;
   }
 });
 
@@ -255,3 +278,93 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   });
 });
+
+// 监听悬浮窗的尺寸与位置变动，并实时记忆
+chrome.windows.onBoundsChanged.addListener((win) => {
+  if (win.id === popupWindowId) {
+    chrome.storage.local.set({
+      popupWidth: win.width,
+      popupHeight: win.height,
+      popupLeft: win.left,
+      popupTop: win.top
+    });
+  }
+});
+
+// 监听扩展图标的点击行为（针对悬浮窗口模式）
+chrome.action.onClicked.addListener(() => {
+  chrome.storage.local.get(["displayMode"], (res) => {
+    const mode = res.displayMode || "popup";
+    if (mode === "popup") {
+      openPopupWindow();
+    }
+  });
+});
+
+// 监听配置改变（当用户在 options 页面更改呈现方式时，动态调整图标绑定）
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === "local" && changes.displayMode) {
+    updateActionBehavior(changes.displayMode.newValue);
+  }
+});
+
+// 创建悬浮小窗口
+function createWindow() {
+  chrome.storage.local.get(["popupWidth", "popupHeight", "popupLeft", "popupTop"], (res) => {
+    chrome.windows.getLastFocused((currentWin) => {
+      // 默认宽度 380px，高度 680px
+      const width = parseInt(res.popupWidth) || 380;
+      const height = parseInt(res.popupHeight) || 680;
+      
+      let left = parseInt(res.popupLeft);
+      let top = parseInt(res.popupTop);
+
+      // 若之前无记忆的位置，默认贴着当前活跃浏览器窗口的右边缘对齐
+      if (isNaN(left) || isNaN(top)) {
+        if (currentWin) {
+          left = Math.max(0, currentWin.left + currentWin.width - width - 20);
+          top = Math.max(0, currentWin.top + 50);
+        } else {
+          left = 1000;
+          top = 100;
+        }
+      }
+
+      chrome.windows.create({
+        url: "panel.html",
+        type: "popup",
+        width: width,
+        height: height,
+        left: left,
+        top: top
+      }, (win) => {
+        popupWindowId = win.id;
+      });
+    });
+  });
+}
+
+// 唤醒或聚焦悬浮小窗口
+function openPopupWindow() {
+  if (popupWindowId !== null) {
+    chrome.windows.get(popupWindowId, (win) => {
+      if (chrome.runtime.lastError || !win) {
+        // 窗口不存在，重新创建
+        popupWindowId = null;
+        createWindow();
+      } else {
+        // 窗口存在，聚焦到最前面
+        chrome.windows.update(popupWindowId, { focused: true });
+      }
+    });
+  } else {
+    createWindow();
+  }
+}
+
+// 动态调整扩展图标的点击行为
+function updateActionBehavior(mode) {
+  const isSidePanel = mode === "sidePanel";
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: isSidePanel })
+    .catch((error) => console.warn("动态调整侧边栏行为失败:", error));
+}

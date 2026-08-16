@@ -20,6 +20,8 @@ const thinkingToggleContainer = document.getElementById("thinking-toggle-contain
 document.addEventListener("DOMContentLoaded", () => {
   loadConfig();
   initEventListeners();
+  // 检查是否有网页滑词触发的待解释文本
+  setTimeout(checkPendingSelection, 100);
 });
 
 // 加载 Chrome Storage 中的配置
@@ -125,12 +127,43 @@ function initEventListeners() {
     });
   });
 
-  // 监听 Storage 变更（当用户在 options 页面更新配置时，这里能够实时拉取更新）
+  // 监听 Storage 变更
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === "local") {
-      loadConfig();
+      if (changes.pendingSelection && changes.pendingSelection.newValue) {
+        const selection = changes.pendingSelection.newValue;
+        chrome.storage.local.remove("pendingSelection", () => {
+          triggerExplain(selection);
+        });
+      } else {
+        loadConfig();
+      }
     }
   });
+}
+
+// 检查并提取待解释的网页选中文本
+function checkPendingSelection() {
+  chrome.storage.local.get(["pendingSelection"], (res) => {
+    if (res.pendingSelection) {
+      const selection = res.pendingSelection;
+      chrome.storage.local.remove("pendingSelection", () => {
+        triggerExplain(selection);
+      });
+    }
+  });
+}
+
+// 触发解释选中文本的对话动作
+function triggerExplain(text) {
+  if (!text) return;
+  welcomeViewEl.classList.add("hidden");
+  chatInputEl.value = `帮我解释这段内容：\n\n"${text}"`;
+  
+  // 延迟一小会儿，确保 UI 已经聚焦且配置已加载完成
+  setTimeout(() => {
+    handleSend();
+  }, 200);
 }
 
 // 3. 处理发送消息逻辑

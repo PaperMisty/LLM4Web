@@ -38,6 +38,7 @@ const PRESETS = {
 let envConfig = null; // 用于缓存解析出来的 .env 配置
 
 document.addEventListener("DOMContentLoaded", async () => {
+  const displayModeSelect = document.getElementById("display-mode");
   const providerSelect = document.getElementById("provider");
   const baseUrlInput = document.getElementById("base-url");
   const apiKeyInput = document.getElementById("api-key");
@@ -164,7 +165,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // 3. 从 storage 加载已保存配置
-  chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model"], (result) => {
+  chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model", "displayMode"], (result) => {
+    displayModeSelect.value = result.displayMode || "popup";
+    
     const savedProvider = result.provider || "siliconflow";
     providerSelect.value = savedProvider;
     
@@ -367,6 +370,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   settingsForm.addEventListener("submit", (e) => {
     e.preventDefault();
 
+    const displayMode = displayModeSelect.value;
     const provider = providerSelect.value;
     const baseUrl = baseUrlInput.value.trim();
     const apiKey = apiKeyInput.value.trim();
@@ -383,6 +387,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     spinner.classList.remove("hidden");
 
     const settings = {
+      displayMode,
       provider,
       baseUrl,
       apiKey,

@@ -27,6 +27,17 @@
       </div>
 
       <form id="settings-form">
+        <!-- 呈现模式 -->
+        <div class="form-group">
+          <label for="display-mode">呈现方式 (Display Mode)</label>
+          <div class="select-wrapper">
+            <select id="display-mode" required>
+              <option value="popup">悬浮小窗口 (Popup Window)</option>
+              <option value="sidePanel">侧边栏模式 (Side Panel)</option>
+            </select>
+          </div>
+        </div>
+
         <!-- 接口提供商 -->
         <div class="form-group">
           <label for="provider">API 提供商</label>
