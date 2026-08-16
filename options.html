@@ -68,7 +68,17 @@
               <!-- 动态根据 Provider 插入 -->
             </datalist>
           </div>
-          <span class="help-text">支持选择下拉推荐，也可以直接手动输入任意兼容模型。</span>
+          <div class="model-action-buttons">
+            <button type="button" id="btn-fetch-models" class="btn-secondary-action" title="拉取当前配置下服务商提供的所有模型">
+              <span>🔄 拉取可用模型</span>
+              <div class="spinner-sm hidden"></div>
+            </button>
+            <button type="button" id="btn-test-model" class="btn-secondary-action" title="发送 1 token 测试连通性并自动探测推理(Thinking)支持状态">
+              <span>🔌 测试连接与推理</span>
+              <div class="spinner-sm hidden"></div>
+            </button>
+          </div>
+          <span class="help-text">拉取最新模型可以更新下拉菜单；测试连接能够自动探测当前模型是否支持推理模式（Thinking）。</span>
         </div>
 
         <!-- 提交区域 -->

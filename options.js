@@ -217,6 +217,92 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
+  // 4.5 模型获取与测试
+  const btnFetchModels = document.getElementById("btn-fetch-models");
+  const btnTestModel = document.getElementById("btn-test-model");
+
+  btnFetchModels.addEventListener("click", () => {
+    const apiKey = apiKeyInput.value.trim();
+    const baseUrl = baseUrlInput.value.trim();
+
+    if (!apiKey || !baseUrl) {
+      showToast("⚠️ 请先输入 API Key 和 Base URL");
+      return;
+    }
+
+    btnFetchModels.disabled = true;
+    const spinner = btnFetchModels.querySelector(".spinner-sm");
+    const textSpan = btnFetchModels.querySelector("span");
+    spinner.classList.remove("hidden");
+    textSpan.innerText = "正在拉取...";
+
+    chrome.runtime.sendMessage({
+      type: "GET_MODELS",
+      apiKey,
+      baseUrl
+    }, (response) => {
+      btnFetchModels.disabled = false;
+      spinner.classList.add("hidden");
+      textSpan.innerText = "🔄 拉取可用模型";
+
+      if (response && response.success) {
+        modelList.innerHTML = "";
+        response.models.forEach(modelId => {
+          const option = document.createElement("option");
+          option.value = modelId;
+          modelList.appendChild(option);
+        });
+        showToast(`✅ 成功拉取并更新了 ${response.models.length} 个模型！`);
+      } else {
+        showToast(`❌ 拉取失败: ${response ? response.error : "未知错误"}`);
+      }
+    });
+  });
+
+  btnTestModel.addEventListener("click", () => {
+    const apiKey = apiKeyInput.value.trim();
+    const baseUrl = baseUrlInput.value.trim();
+    const model = modelInput.value.trim();
+    const provider = providerSelect.value;
+
+    if (!apiKey || !baseUrl || !model) {
+      showToast("⚠️ 请先填写完整 API Key、Base URL 以及模型名称");
+      return;
+    }
+
+    btnTestModel.disabled = true;
+    const spinner = btnTestModel.querySelector(".spinner-sm");
+    const textSpan = btnTestModel.querySelector("span");
+    spinner.classList.remove("hidden");
+    textSpan.innerText = "正在测试...";
+
+    chrome.runtime.sendMessage({
+      type: "TEST_CONNECTION",
+      apiKey,
+      baseUrl,
+      model
+    }, (response) => {
+      btnTestModel.disabled = false;
+      spinner.classList.add("hidden");
+      textSpan.innerText = "🔌 测试连接与推理";
+
+      if (response && response.success) {
+        const supportThinking = response.supportThinking;
+        // 将测试出的推理支持状态存储起来，用于 Panel 面板动态展现思考开关
+        const storageKey = `support_thinking_${provider}_${model}`;
+        chrome.storage.local.set({ [storageKey]: supportThinking }, () => {
+          if (supportThinking) {
+            showToast(`🟢 连接成功！且检测到此模型支持思考(Thinking)过程。`);
+          } else {
+            showToast(`🟡 连接成功！但未检测到此模型的推理能力（不支持思考）。`);
+          }
+        });
+      } else {
+        showToast(`🔴 连接失败: ${response ? response.error : "未知错误"}`);
+      }
+    });
+  });
+
   // 5. 保存配置表单
   settingsForm.addEventListener("submit", (e) => {
     e.preventDefault();

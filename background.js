@@ -3,7 +3,101 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error("设置侧边栏行为失败:", error));
 
-// 监听长连接
+// 启发式判断模型是否支持推理/思考
+function isThinkingSupported(modelName) {
+  if (!modelName) return false;
+  const name = modelName.toLowerCase();
+  const keywords = [
+    "r1",
+    "reasoner",
+    "thinking",
+    "qwq",
+    "distill",
+    "v4",      // 兼容 deepseek-v4-flash, deepseek-v4-pro 等
+    "v3.2",    // 兼容 deepseek-v3.2 等
+    "glm-5",
+    "glm-4.7",
+    "glm-4.6"
+  ];
+  return keywords.some(keyword => name.includes(keyword));
+}
+
+// 一次性消息监听器（处理配置页面的获取模型与测试连接请求，避免跨域 CORS）
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === "GET_MODELS") {
+    const { apiKey, baseUrl } = request;
+    const url = `${baseUrl.replace(/\/$/, "")}/models`;
+
+    fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`
+      }
+    })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        if (data && Array.isArray(data.data)) {
+          const modelIds = data.data.map(m => m.id);
+          sendResponse({ success: true, models: modelIds });
+        } else {
+          sendResponse({ success: false, error: "返回的接口数据格式不规范，未能获取模型列表" });
+        }
+      })
+      .catch(err => {
+        console.error("获取模型列表失败:", err);
+        sendResponse({ success: false, error: err.message || "请求失败，请确认 API Key 或 Base URL 是否正确" });
+      });
+
+    return true; // 保持异步响应通道
+  }
+
+  if (request.type === "TEST_CONNECTION") {
+    const { apiKey, baseUrl, model } = request;
+    const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+
+    // 发送极其简短的单 token 测算，将消耗控制在最低且反应迅速
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: "user", content: "." }],
+        max_tokens: 1,
+        stream: false
+      })
+    })
+      .then(async res => {
+        const text = await res.text();
+        if (!res.ok) {
+          let errJson;
+          try { errJson = JSON.parse(text); } catch(e) {}
+          throw new Error(errJson?.message || errJson?.error?.message || text || `HTTP error! status: ${res.status}`);
+        }
+        return text;
+      })
+      .then(text => {
+        // 判定返回的 JSON 中是否含有 "reason" (如 reasoning_content 或 reasoning) 关键字
+        const hasReasonField = text.toLowerCase().includes("reason");
+        sendResponse({ success: true, supportThinking: hasReasonField });
+      })
+      .catch(err => {
+        console.error("连通性测试失败:", err);
+        sendResponse({ success: false, error: err.message || "连接测试失败" });
+      });
+
+    return true; // 保持异步响应通道
+  }
+});
+
+// 监听长连接（处理 Panel 的流式对话请求）
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "chat-stream") return;
 
@@ -11,7 +105,6 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener(async (msg) => {
     if (msg.type === "SEND_MESSAGE") {
-      // 如果之前有未完成的请求，先中断
       if (abortController) {
         abortController.abort();
       }
@@ -21,26 +114,24 @@ chrome.runtime.onConnect.addListener((port) => {
       const history = msg.messages;
 
       try {
-        // 构建请求体
         const requestBody = {
           model: model,
           messages: history,
           stream: true
         };
 
-        // 根据提供商做个性化适配
+        // API 提供商适配逻辑
         if (provider === "siliconflow") {
-          // 硅基流动的 DeepSeek 模型支持 enable_thinking 开关
-          if (model.includes("deepseek") && model.includes("R1")) {
-            requestBody.enable_thinking = enableThinking;
+          // 如果该模型可能支持思考
+          if (isThinkingSupported(model)) {
+            requestBody.enable_thinking = enableThinking; // 显式传递 true 或 false
           }
         } else if (provider === "deepseek") {
-          // DeepSeek 官方 API 自身没有 enable_thinking 参数，
-          // 它的思考是通过 deepseek-reasoner 模型自动输出的，deepseek-chat 模型则没有思考过程。
-          // 故不传递 enable_thinking 字段，避免官方 API 报错
+          // DeepSeek 官方接口由模型本身控制（deepseek-reasoner 输出思考，deepseek-chat 不输出）
+          // 故不传递 enable_thinking，避免引发参数报错
         } else {
           // 自定义提供商兼容
-          if (model.includes("deepseek")) {
+          if (isThinkingSupported(model)) {
             requestBody.enable_thinking = enableThinking;
           }
         }
@@ -59,9 +150,7 @@ chrome.runtime.onConnect.addListener((port) => {
         if (!response.ok) {
           const errText = await response.text();
           let errJson;
-          try {
-            errJson = JSON.parse(errText);
-          } catch(e) {}
+          try { errJson = JSON.parse(errText); } catch(e) {}
           const errMsg = errJson?.message || errJson?.error?.message || errText || `HTTP error! status: ${response.status}`;
           port.postMessage({ type: "ERROR", error: errMsg });
           return;
@@ -79,14 +168,12 @@ chrome.runtime.onConnect.addListener((port) => {
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
-          // 留下最后一行未完成的内容放入下一次循环处理
           buffer = lines.pop();
 
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed) continue;
             
-            // 处理 SSE 结束标志
             if (trimmed === "data: [DONE]") {
               port.postMessage({ type: "DONE" });
               continue;
@@ -108,14 +195,12 @@ chrome.runtime.onConnect.addListener((port) => {
                   }
                 }
               } catch (e) {
-                // 部分 API 可能会返回不规范的 SSE 数据，忽略解析错误以防止中断流式展示
                 console.warn("解析流数据出错:", e, trimmed);
               }
             }
           }
         }
 
-        // 确保最后的 buffer 也能被处理（如果有的话）
         if (buffer && buffer.startsWith("data: ")) {
           try {
             const trimmed = buffer.trim();
@@ -147,7 +232,6 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   });
 
-  // 端口断开时（用户关闭 Panel 或页面刷新），自动中止请求
   port.onDisconnect.addListener(() => {
     if (abortController) {
       abortController.abort();

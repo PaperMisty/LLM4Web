@@ -44,15 +44,20 @@ function loadConfig() {
       modelStatusEl.innerText = result.model;
       modelStatusEl.className = "model-badge";
 
-      // 如果模型不是 DeepSeek 系列，在界面上隐藏“思考”开关
-      const isDeepSeek = result.model.toLowerCase().includes("deepseek");
-      const isR1Model = result.model.toLowerCase().includes("r1") || result.model.toLowerCase().includes("reasoner");
-      if (isDeepSeek && isR1Model) {
-        thinkingToggleContainer.classList.remove("hidden");
-      } else {
-        // 如果不是 DeepSeek 思考模型，隐藏该开关
-        thinkingToggleContainer.classList.add("hidden");
-      }
+      // 推理支持探测双保险：优先读取测试连接的存储缓存，如无则使用启发式命名检索兜底
+      const cacheKey = `support_thinking_${result.provider}_${result.model}`;
+      chrome.storage.local.get([cacheKey], (cacheResult) => {
+        let supportThinking = cacheResult[cacheKey];
+        if (supportThinking === undefined) {
+          supportThinking = isThinkingSupported(result.model);
+        }
+
+        if (supportThinking) {
+          thinkingToggleContainer.classList.remove("hidden");
+        } else {
+          thinkingToggleContainer.classList.add("hidden");
+        }
+      });
     }
   });
 }
@@ -425,4 +430,23 @@ function renderMarkdown(text) {
   }
 
   return html;
+}
+
+// 启发式判断模型是否支持推理/思考
+function isThinkingSupported(modelName) {
+  if (!modelName) return false;
+  const name = modelName.toLowerCase();
+  const keywords = [
+    "r1",
+    "reasoner",
+    "thinking",
+    "qwq",
+    "distill",
+    "v4",      // 兼容 deepseek-v4-flash, deepseek-v4-pro 等
+    "v3.2",    // 兼容 deepseek-v3.2 等
+    "glm-5",
+    "glm-4.7",
+    "glm-4.6"
+  ];
+  return keywords.some(keyword => name.includes(keyword));
 }
