@@ -8,6 +8,8 @@ let overlayIframe = null;    // 面板 iframe
 let displayMode = "inPage";   // popup | sidePanel | inPage (inPage 为默认)
 let pendingExplainText = null; // iframe 尚未加载完成时暂存的划词文本
 let pendingExplainMode = "medium"; // iframe 尚未加载完成时暂存的选定模式
+let pendingExplainPrefix = ""; // 暂存的划词前置上下文
+let pendingExplainSuffix = ""; // 暂存的划词后置上下文
 
 // 读取呈现模式，inPage 模式下注入悬浮面板
 chrome.storage.local.get(["displayMode"], (res) => {
@@ -71,8 +73,10 @@ function ensureOverlay() {
     if (pendingExplainText) {
       const text = pendingExplainText;
       const mode = pendingExplainMode;
+      const prefix = pendingExplainPrefix;
+      const suffix = pendingExplainSuffix;
       pendingExplainText = null;
-      sendExplainToOverlay(text, mode);
+      sendExplainToOverlay(text, mode, prefix, suffix);
     }
   });
 
@@ -101,12 +105,12 @@ function isOverlayVisible() {
   return !!overlay && overlay.classList.contains("llm4web-overlay-visible");
 }
 
-// 把划词文本和解释模式直接交给 iframe 内的面板
-function sendExplainToOverlay(text, mode = "medium") {
+// 把划词文本、解释模式和前后文直接交给 iframe 内的面板
+function sendExplainToOverlay(text, mode = "medium", prefix = "", suffix = "") {
   if (!overlayIframe || !overlayIframe.contentWindow) return;
   try {
     overlayIframe.contentWindow.postMessage(
-      { type: "LLM4WEB_EXPLAIN", text: text, mode: mode },
+      { type: "LLM4WEB_EXPLAIN", text: text, mode: mode, prefix: prefix, suffix: suffix },
       "*"
     );
   } catch (e) {
@@ -179,7 +183,7 @@ function startOverlayDrag(clientX, clientY) {
 // 监听鼠标抬起事件，用于捕获划词选区
 document.addEventListener("mouseup", (e) => {
   // 如果点击的是悬浮按钮本身或面板区域，直接忽略
-  if (e.target.closest(".llm4web-floating-btn")) return;
+  if (e.target.closest(".llm4web-floating-bar")) return;
   if (e.target.closest(".llm4web-overlay")) return;
 
   // 延迟一小会儿，确保选区状态已经更新
@@ -193,11 +197,14 @@ document.addEventListener("mouseup", (e) => {
       return;
     }
 
+    // 获取选区前后的上下文环境（前后各 50 字符）
+    const context = getSelectionContext(selection);
+
     // 打印调试日志，方便在网页 F12 控制台排查注入状态
     console.log("[LLM4Web] 捕获到划词文本:", selectedText);
 
     // 创建或更新悬浮小按钮
-    createFloatingBtn(e.pageX, e.pageY, selectedText);
+    createFloatingBtn(e.pageX, e.pageY, selectedText, context.prefix, context.suffix);
   }, 10);
 });
 
@@ -209,7 +216,7 @@ document.addEventListener("mousedown", (e) => {
 });
 
 // 创建悬浮 AI 按钮栏（并列三个：简易/中等/复杂）
-function createFloatingBtn(x, y, text) {
+function createFloatingBtn(x, y, text, prefix = "", suffix = "") {
   // 先清理可能存在的旧按钮
   removeFloatingBtn();
 
@@ -246,16 +253,20 @@ function createFloatingBtn(x, y, text) {
       if (displayMode === "inPage") {
         showOverlay();
         if (overlayIframe && overlayIframe.contentWindow) {
-          sendExplainToOverlay(text, mode);
+          sendExplainToOverlay(text, mode, prefix, suffix);
         } else {
           pendingExplainText = text;
           pendingExplainMode = mode;
+          pendingExplainPrefix = prefix;
+          pendingExplainSuffix = suffix;
         }
       } else {
         chrome.runtime.sendMessage({
           type: "EXPLAIN_TEXT",
           text: text,
-          mode: mode
+          mode: mode,
+          contextPrefix: prefix,
+          contextSuffix: suffix
         });
       }
 
@@ -283,4 +294,45 @@ function removeFloatingBtn() {
     floatingBtn.remove();
     floatingBtn = null;
   }
+}
+
+// 获取划词选区前后的纯文本上下文（前后各 50 字符）
+function getSelectionContext(selection) {
+  if (!selection || selection.rangeCount === 0) {
+    return { prefix: "", suffix: "" };
+  }
+  const range = selection.getRangeAt(0);
+  
+  // 1. 寻找最近的公共祖先元素作为节点边界，防止拉出全文耗费性能
+  let container = range.commonAncestorContainer;
+  if (container.nodeType === Node.TEXT_NODE) {
+    container = container.parentNode;
+  }
+
+  let prefix = "";
+  let suffix = "";
+
+  try {
+    // 2. 提取当前选区前面的文本
+    const preRange = document.createRange();
+    preRange.setStartBefore(container);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    const preText = preRange.toString();
+    prefix = preText.substring(Math.max(0, preText.length - 50)); // 取最后的 50 个字符
+  } catch (e) {
+    console.warn("提取前置上下文失败:", e);
+  }
+
+  try {
+    // 3. 提取当前选区后面的文本
+    const postRange = document.createRange();
+    postRange.setStart(range.endContainer, range.endOffset);
+    postRange.setEndAfter(container);
+    const postText = postRange.toString();
+    suffix = postText.substring(0, Math.min(50, postText.length)); // 取前 50 个字符
+  } catch (e) {
+    console.warn("提取后置上下文失败:", e);
+  }
+
+  return { prefix, suffix };
 }

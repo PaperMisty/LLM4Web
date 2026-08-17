@@ -35,7 +35,7 @@ function initEmbeddedMode() {
   window.addEventListener("message", (e) => {
     const data = e.data;
     if (data && typeof data === "object" && data.type === "LLM4WEB_EXPLAIN" && typeof data.text === "string") {
-      triggerExplain(data.text);
+      triggerExplain(data.text, data.mode || "medium", data.prefix || "", data.suffix || "");
     }
   });
 
@@ -169,10 +169,12 @@ function initEventListeners() {
     if (namespace === "local") {
       if (changes.pendingSelection && changes.pendingSelection.newValue) {
         const selection = changes.pendingSelection.newValue;
-        chrome.storage.local.get(["pendingMode"], (res) => {
+        chrome.storage.local.get(["pendingMode", "pendingPrefix", "pendingSuffix"], (res) => {
           const mode = res.pendingMode || "medium";
-          chrome.storage.local.remove(["pendingSelection", "pendingMode"], () => {
-            triggerExplain(selection, mode);
+          const prefix = res.pendingPrefix || "";
+          const suffix = res.pendingSuffix || "";
+          chrome.storage.local.remove(["pendingSelection", "pendingMode", "pendingPrefix", "pendingSuffix"], () => {
+            triggerExplain(selection, mode, prefix, suffix);
           });
         });
       } else {
@@ -184,34 +186,42 @@ function initEventListeners() {
 
 // 检查并提取待解释的网页选中文本
 function checkPendingSelection() {
-  chrome.storage.local.get(["pendingSelection", "pendingMode"], (res) => {
+  chrome.storage.local.get(["pendingSelection", "pendingMode", "pendingPrefix", "pendingSuffix"], (res) => {
     if (res.pendingSelection) {
       const selection = res.pendingSelection;
       const mode = res.pendingMode || "medium";
-      chrome.storage.local.remove(["pendingSelection", "pendingMode"], () => {
-        triggerExplain(selection, mode);
+      const prefix = res.pendingPrefix || "";
+      const suffix = res.pendingSuffix || "";
+      chrome.storage.local.remove(["pendingSelection", "pendingMode", "pendingPrefix", "pendingSuffix"], () => {
+        triggerExplain(selection, mode, prefix, suffix);
       });
     }
   });
 }
 
 // 触发解释选中文本的对话动作
-function triggerExplain(text, mode = "medium") {
+function triggerExplain(text, mode = "medium", prefix = "", suffix = "") {
   if (!text) return;
   welcomeViewEl.classList.add("hidden");
 
-  // 1. 组装只面向模型的完整底层提示词指令（包含约束条件）
-  let apiText = "";
-  if (mode === "easy") {
-    apiText = `请帮我简明扼要地解释以下内容（请严格限制在 50 个 Token 左右，回答必须极其简短、直奔主题，无需客套）：\n\n"${text}"`;
-  } else if (mode === "complex") {
-    apiText = `请帮我深入、详细地解释以下内容（不设任何字数和长度限制，请结合上下文提供尽可能详尽、专业的剖析与背景知识）：\n\n"${text}"`;
-  } else {
-    // 默认是中等 (medium)
-    apiText = `请帮我解释以下内容（请控制在 200 个 Token 左右，简明说明核心要义即可）：\n\n"${text}"`;
+  // 1. 组装网页上下文提示说明（仅面向模型，不在对话框中向用户展示）
+  let contextPrompt = "";
+  if (prefix || suffix) {
+    contextPrompt = `\n[划词所处的网页上下文环境（仅供辅助理解背景，请优先聚焦在解释划词文本本身上）：]\n前文："${prefix}"\n划词目标："${text}"\n后文："${suffix}"\n\n`;
   }
 
-  // 2. 组装展示给用户的纯净文字（不污染聊天记录上下文）
+  // 2. 组装只面向模型的完整底层提示词指令（包含约束条件）
+  let apiText = "";
+  if (mode === "easy") {
+    apiText = `请帮我简明扼要地解释以下内容。${contextPrompt}（请严格限制在 50 个 Token 左右，回答必须极其简短、直奔主题，无需任何客套与前缀说明）：\n\n"${text}"`;
+  } else if (mode === "complex") {
+    apiText = `请帮我深入、详细地解释以下内容。${contextPrompt} (请不受任何字数 and 长度限制，结合上述上下文环境提供尽可能详尽、专业的剖析、背景脉络与学术拓展讲解)：\n\n"${text}"`;
+  } else {
+    // 默认是中等 (medium)
+    apiText = `请帮我解释以下内容。${contextPrompt}（请控制在 200 个 Token 左右，结合上述上下文环境简明说明其核心要义即可，直击要点）：\n\n"${text}"`;
+  }
+
+  // 3. 组装展示给用户的纯净文字（不污染聊天记录上下文）
   const uiText = `📖 解释选中文本：\n"${text}"`;
   
   // 延迟一小会儿，确保 UI 已经聚焦且配置已加载完成

@@ -112,13 +112,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === "EXPLAIN_TEXT") {
-    lastExplainTime = Date.now(); // 记录当前时间，挂起失焦自动关闭
+    lastExplainTime = Date.now(); // 记录当前时间，挂起失警自动关闭
     const selectedText = request.text;
     const selectedMode = request.mode || "medium";
-    // 1. 将选中文本与对应模式写入 storage 暂存
+    const contextPrefix = request.contextPrefix || "";
+    const contextSuffix = request.contextSuffix || "";
+    // 1. 将选中文本、对应模式以及上下文环境写入 storage 暂存
     chrome.storage.local.set({ 
       pendingSelection: selectedText,
-      pendingMode: selectedMode
+      pendingMode: selectedMode,
+      pendingPrefix: contextPrefix,
+      pendingSuffix: contextSuffix
     }, () => {
       // 2. 根据当前的呈现模式，唤起主面板
       chrome.storage.local.get(["displayMode"], (res) => {
