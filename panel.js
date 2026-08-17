@@ -169,8 +169,11 @@ function initEventListeners() {
     if (namespace === "local") {
       if (changes.pendingSelection && changes.pendingSelection.newValue) {
         const selection = changes.pendingSelection.newValue;
-        chrome.storage.local.remove("pendingSelection", () => {
-          triggerExplain(selection);
+        chrome.storage.local.get(["pendingMode"], (res) => {
+          const mode = res.pendingMode || "medium";
+          chrome.storage.local.remove(["pendingSelection", "pendingMode"], () => {
+            triggerExplain(selection, mode);
+          });
         });
       } else {
         loadConfig();
@@ -181,31 +184,48 @@ function initEventListeners() {
 
 // 检查并提取待解释的网页选中文本
 function checkPendingSelection() {
-  chrome.storage.local.get(["pendingSelection"], (res) => {
+  chrome.storage.local.get(["pendingSelection", "pendingMode"], (res) => {
     if (res.pendingSelection) {
       const selection = res.pendingSelection;
-      chrome.storage.local.remove("pendingSelection", () => {
-        triggerExplain(selection);
+      const mode = res.pendingMode || "medium";
+      chrome.storage.local.remove(["pendingSelection", "pendingMode"], () => {
+        triggerExplain(selection, mode);
       });
     }
   });
 }
 
 // 触发解释选中文本的对话动作
-function triggerExplain(text) {
+function triggerExplain(text, mode = "medium") {
   if (!text) return;
   welcomeViewEl.classList.add("hidden");
-  chatInputEl.value = `帮我解释这段内容：\n\n"${text}"`;
+
+  // 1. 组装只面向模型的完整底层提示词指令（包含约束条件）
+  let apiText = "";
+  if (mode === "easy") {
+    apiText = `请帮我简明扼要地解释以下内容（请严格限制在 50 个 Token 左右，回答必须极其简短、直奔主题，无需客套）：\n\n"${text}"`;
+  } else if (mode === "complex") {
+    apiText = `请帮我深入、详细地解释以下内容（不设任何字数和长度限制，请结合上下文提供尽可能详尽、专业的剖析与背景知识）：\n\n"${text}"`;
+  } else {
+    // 默认是中等 (medium)
+    apiText = `请帮我解释以下内容（请控制在 200 个 Token 左右，简明说明核心要义即可）：\n\n"${text}"`;
+  }
+
+  // 2. 组装展示给用户的纯净文字（不污染聊天记录上下文）
+  const uiText = `📖 解释选中文本：\n"${text}"`;
   
   // 延迟一小会儿，确保 UI 已经聚焦且配置已加载完成
   setTimeout(() => {
-    handleSend();
+    handleSend(apiText, uiText);
   }, 200);
 }
 
 // 3. 处理发送消息逻辑
-function handleSend() {
-  const text = chatInputEl.value.trim();
+function handleSend(apiText = null, uiText = null) {
+  const rawText = chatInputEl.value.trim();
+  const text = apiText || rawText;
+  const displayText = uiText || rawText;
+
   if (!text || isStreaming) return;
 
   // 如果没有正确配置，拦截发送
@@ -217,15 +237,15 @@ function handleSend() {
   // 隐藏欢迎视图
   welcomeViewEl.classList.add("hidden");
 
-  // 在界面上渲染用户消息
-  appendMessage("user", text);
+  // 在界面上渲染用户消息（显示纯净无内部指令版）
+  appendMessage("user", displayText);
 
   // 清空并重置输入框
   chatInputEl.value = "";
   chatInputEl.style.height = "auto";
 
-  // 添加到历史中
-  chatHistory.push({ role: "user", content: text });
+  // 添加到历史中（UI 洁净版，防止上下文被模板提示词污染）
+  chatHistory.push({ role: "user", content: displayText });
 
   // 渲染 AI 消息占位框架，为流式写入做准备
   const { bubbleElement, thoughtContentEl, textContentEl, thoughtBoxEl } = createAssistantBubbleSkeleton();
@@ -274,7 +294,7 @@ function handleSend() {
 
       // 去除自动滚屏逻辑以实现生成期间界面悬停
     } else if (msg.type === "DONE") {
-      finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl);
+      finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl, false, msg.metrics);
     } else if (msg.type === "ERROR") {
       setStreamingState(false);
       textContentEl.innerHTML = `<span style="color: #ef4444;">⚠️ 发生错误: ${escapeHtml(msg.error)}</span>`;
@@ -291,10 +311,19 @@ function handleSend() {
     }
   });
 
+  // 在发送给 background 之前复制一份历史，把最后一条用户消息的内容替换成真实的带提示词指令版本
+  const messagesToSend = [...chatHistory];
+  if (messagesToSend.length > 0) {
+    messagesToSend[messagesToSend.length - 1] = {
+      role: "user",
+      content: text // 使用真实提示词（带 Easy/Medium/Complex 前缀）替换
+    };
+  }
+
   // 发送消息载荷
   currentPort.postMessage({
     type: "SEND_MESSAGE",
-    messages: chatHistory,
+    messages: messagesToSend,
     config: {
       provider: appConfig.provider,
       apiKey: appConfig.apiKey,
@@ -331,7 +360,7 @@ function setStreamingState(streaming) {
 }
 
 // 完成流处理
-function finishStreaming(content, reasoning, thoughtBoxEl, isAborted = false) {
+function finishStreaming(content, reasoning, thoughtBoxEl, isAborted = false, metrics = null) {
   setStreamingState(false);
   
   if (currentPort) {
@@ -349,7 +378,6 @@ function finishStreaming(content, reasoning, thoughtBoxEl, isAborted = false) {
   }
 
   // 整理并推入历史记录中
-  // 为了支持带有 reasoning_content 的结构，我们用标准的 OpenAI 思考字段（如果有的话）
   const responseMsg = { role: "assistant", content: content };
   if (reasoning) {
     responseMsg.reasoning_content = reasoning;
@@ -360,6 +388,19 @@ function finishStreaming(content, reasoning, thoughtBoxEl, isAborted = false) {
     const bubbleText = thoughtBoxEl.parentNode.querySelector(".msg-text");
     if (bubbleText) {
       bubbleText.innerHTML = renderMarkdown(content + "\n\n*(生成已由用户中止)*");
+    }
+  } else if (metrics && thoughtBoxEl) {
+    // 正常流式生成结束后，在助理气泡底部追加渲染性能指标与 Token 用量
+    const bubble = thoughtBoxEl.parentNode;
+    if (bubble) {
+      const metricsEl = document.createElement("div");
+      metricsEl.className = "metrics-bar";
+      metricsEl.innerHTML = `
+        <span class="metrics-item" title="大模型首字延迟 (Time to First Token)">⏱️ TTFT: ${metrics.ttft}ms</span>
+        <span class="metrics-item" title="平均每秒生成 Token 速率">⚡ 速度: ${metrics.speed} t/s</span>
+        <span class="metrics-item" title="提示词与补全所消耗的 Token 用量">🪙 消耗: ${metrics.totalTokens} t (${metrics.promptTokens} in / ${metrics.completionTokens} out)</span>
+      `;
+      bubble.appendChild(metricsEl);
     }
   }
 

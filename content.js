@@ -7,6 +7,7 @@ let overlay = null;          // 悬浮面板容器
 let overlayIframe = null;    // 面板 iframe
 let displayMode = "inPage";   // popup | sidePanel | inPage (inPage 为默认)
 let pendingExplainText = null; // iframe 尚未加载完成时暂存的划词文本
+let pendingExplainMode = "medium"; // iframe 尚未加载完成时暂存的选定模式
 
 // 读取呈现模式，inPage 模式下注入悬浮面板
 chrome.storage.local.get(["displayMode"], (res) => {
@@ -65,12 +66,13 @@ function ensureOverlay() {
     }
   });
 
-  // iframe 加载完成后，补发暂存的划词文本
+  // iframe 加载完成后，补发暂存的划词文本与对应模式
   overlayIframe.addEventListener("load", () => {
     if (pendingExplainText) {
       const text = pendingExplainText;
+      const mode = pendingExplainMode;
       pendingExplainText = null;
-      sendExplainToOverlay(text);
+      sendExplainToOverlay(text, mode);
     }
   });
 
@@ -99,12 +101,12 @@ function isOverlayVisible() {
   return !!overlay && overlay.classList.contains("llm4web-overlay-visible");
 }
 
-// 把划词文本直接交给 iframe 内的面板
-function sendExplainToOverlay(text) {
+// 把划词文本和解释模式直接交给 iframe 内的面板
+function sendExplainToOverlay(text, mode = "medium") {
   if (!overlayIframe || !overlayIframe.contentWindow) return;
   try {
     overlayIframe.contentWindow.postMessage(
-      { type: "LLM4WEB_EXPLAIN", text: text },
+      { type: "LLM4WEB_EXPLAIN", text: text, mode: mode },
       "*"
     );
   } catch (e) {
@@ -201,59 +203,76 @@ document.addEventListener("mouseup", (e) => {
 
 // 监听鼠标按下的瞬间，如果点击的不是按钮，提前清理
 document.addEventListener("mousedown", (e) => {
-  if (floatingBtn && !e.target.closest(".llm4web-floating-btn")) {
+  if (floatingBtn && !e.target.closest(".llm4web-floating-bar")) {
     removeFloatingBtn();
   }
 });
 
-// 创建悬浮 AI 按钮
+// 创建悬浮 AI 按钮栏（并列三个：简易/中等/复杂）
 function createFloatingBtn(x, y, text) {
   // 先清理可能存在的旧按钮
   removeFloatingBtn();
 
   floatingBtn = document.createElement("div");
-  floatingBtn.className = "llm4web-floating-btn";
-  floatingBtn.title = "AI 解释选中文本";
+  floatingBtn.className = "llm4web-floating-bar";
   
-  // 注入精美的 AI 闪烁图标 (SVG)
-  floatingBtn.innerHTML = `
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-    </svg>
-  `;
+  // 创建并列的三个按钮：简易 (⚡)、中等 (🧠)、复杂 (🎓)
+  const btnEasy = document.createElement("button");
+  btnEasy.className = "llm4web-bar-btn easy";
+  btnEasy.title = "简易模式 (约50 tokens限额解释)";
+  btnEasy.innerHTML = `<span>⚡</span><span>简易</span>`;
+
+  const btnMedium = document.createElement("button");
+  btnMedium.className = "llm4web-bar-btn medium";
+  btnMedium.title = "中等模式 (约200 tokens普通解释)";
+  btnMedium.innerHTML = `<span>🧠</span><span>中等</span>`;
+
+  const btnComplex = document.createElement("button");
+  btnComplex.className = "llm4web-bar-btn complex";
+  btnComplex.title = "复杂模式 (不设限制深度解析)";
+  btnComplex.innerHTML = `<span>🎓</span><span>复杂</span>`;
+
+  const configs = [
+    { el: btnEasy, mode: "easy" },
+    { el: btnMedium, mode: "medium" },
+    { el: btnComplex, mode: "complex" }
+  ];
+
+  configs.forEach(({ el, mode }) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      if (displayMode === "inPage") {
+        showOverlay();
+        if (overlayIframe && overlayIframe.contentWindow) {
+          sendExplainToOverlay(text, mode);
+        } else {
+          pendingExplainText = text;
+          pendingExplainMode = mode;
+        }
+      } else {
+        chrome.runtime.sendMessage({
+          type: "EXPLAIN_TEXT",
+          text: text,
+          mode: mode
+        });
+      }
+
+      // 播放淡出微动画并移除
+      floatingBtn.style.transform = "scale(0.8)";
+      floatingBtn.style.opacity = "0";
+      setTimeout(() => {
+        removeFloatingBtn();
+      }, 150);
+    });
+
+    floatingBtn.appendChild(el);
+  });
 
   // 精准定位在鼠标落点右下角
   floatingBtn.style.left = `${x + 10}px`;
   floatingBtn.style.top = `${y + 10}px`;
-
-  // 点击事件处理
-  floatingBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    
-    if (displayMode === "inPage") {
-      // 页面内悬浮面板模式：直接显示面板并把文本交给 iframe 内的聊天面板
-      showOverlay();
-      if (overlayIframe && overlayIframe.contentWindow) {
-        sendExplainToOverlay(text);
-      } else {
-        pendingExplainText = text; // iframe 未就绪时暂存，加载完成后补发
-      }
-    } else {
-      // 原有流程：派发事件通知 background（打开悬浮小窗或侧边栏）
-      chrome.runtime.sendMessage({
-        type: "EXPLAIN_TEXT",
-        text: text
-      });
-    }
-
-    // 播放点击微动画并移除
-    floatingBtn.style.transform = "scale(0.8)";
-    floatingBtn.style.opacity = "0";
-    setTimeout(() => {
-      removeFloatingBtn();
-    }, 150);
-  });
 
   document.body.appendChild(floatingBtn);
 }

@@ -114,8 +114,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === "EXPLAIN_TEXT") {
     lastExplainTime = Date.now(); // 记录当前时间，挂起失焦自动关闭
     const selectedText = request.text;
-    // 1. 将选中文本写入 storage 暂存
-    chrome.storage.local.set({ pendingSelection: selectedText }, () => {
+    const selectedMode = request.mode || "medium";
+    // 1. 将选中文本与对应模式写入 storage 暂存
+    chrome.storage.local.set({ 
+      pendingSelection: selectedText,
+      pendingMode: selectedMode
+    }, () => {
       // 2. 根据当前的呈现模式，唤起主面板
       chrome.storage.local.get(["displayMode"], (res) => {
         const mode = res.displayMode || "inPage";
@@ -150,11 +154,22 @@ chrome.runtime.onConnect.addListener((port) => {
       const { provider, apiKey, baseUrl, model, messages, enableThinking } = msg.config;
       const history = msg.messages;
 
+      // 测速与用量指标统计
+      const startTime = Date.now();
+      let firstTokenTime = null;
+      let promptTokensVal = 0;
+      let completionTokensVal = 0;
+      let totalTokensVal = 0;
+      let receivedCharCount = 0;
+
       try {
         const requestBody = {
           model: model,
           messages: history,
-          stream: true
+          stream: true,
+          stream_options: {
+            include_usage: true
+          }
         };
 
         // API 提供商适配逻辑
@@ -216,18 +231,32 @@ chrome.runtime.onConnect.addListener((port) => {
             if (!trimmed) continue;
             
             if (trimmed === "data: [DONE]") {
-              port.postMessage({ type: "DONE" });
+              // 触发完成，先发送指标
+              sendDoneWithMetrics();
               continue;
             }
 
             if (trimmed.startsWith("data: ")) {
               try {
                 const data = JSON.parse(trimmed.slice(6));
+                
+                // 捕获官方返回的 usage 消耗字段
+                if (data.usage) {
+                  promptTokensVal = data.usage.prompt_tokens;
+                  completionTokensVal = data.usage.completion_tokens;
+                  totalTokensVal = data.usage.total_tokens;
+                }
+
                 const delta = data.choices?.[0]?.delta;
                 if (delta) {
                   const content = delta.content || "";
                   const reasoningContent = delta.reasoning_content || "";
                   if (content || reasoningContent) {
+                    if (firstTokenTime === null) {
+                      firstTokenTime = Date.now();
+                    }
+                    receivedCharCount += content.length + reasoningContent.length;
+
                     port.postMessage({
                       type: "CHUNK",
                       content: content,
@@ -247,19 +276,55 @@ chrome.runtime.onConnect.addListener((port) => {
             const trimmed = buffer.trim();
             if (trimmed !== "data: [DONE]") {
               const data = JSON.parse(trimmed.slice(6));
+              if (data.usage) {
+                promptTokensVal = data.usage.prompt_tokens;
+                completionTokensVal = data.usage.completion_tokens;
+                totalTokensVal = data.usage.total_tokens;
+              }
               const delta = data.choices?.[0]?.delta;
               if (delta) {
+                const content = delta.content || "";
+                const reasoningContent = delta.reasoning_content || "";
+                if (firstTokenTime === null && (content || reasoningContent)) {
+                  firstTokenTime = Date.now();
+                }
+                receivedCharCount += content.length + reasoningContent.length;
+
                 port.postMessage({
                   type: "CHUNK",
-                  content: delta.content || "",
-                  reasoningContent: delta.reasoning_content || ""
+                  content: content,
+                  reasoningContent: reasoningContent
                 });
               }
             }
           } catch (e) {}
         }
 
-        port.postMessage({ type: "DONE" });
+        function sendDoneWithMetrics() {
+          const duration = Date.now() - startTime;
+          const ttft = firstTokenTime ? (firstTokenTime - startTime) : 0;
+          
+          // 如果未从数据块中拿到使用量，使用估算兜底（1汉字≈1.3token，输入打折）
+          const promptTokens = promptTokensVal || Math.round(history.reduce((acc, m) => acc + m.content.length, 0) * 1.2);
+          const completionTokens = completionTokensVal || Math.round(receivedCharCount * 1.3);
+          const totalTokens = totalTokensVal || (promptTokens + completionTokens);
+          
+          const speed = duration > 0 ? (completionTokens / (duration / 1000)) : 0;
+
+          port.postMessage({
+            type: "DONE",
+            metrics: {
+              duration: (duration / 1000).toFixed(2),
+              ttft: ttft,
+              speed: speed.toFixed(1),
+              promptTokens,
+              completionTokens,
+              totalTokens
+            }
+          });
+        }
+
+        sendDoneWithMetrics();
 
       } catch (error) {
         if (error.name === "AbortError") {

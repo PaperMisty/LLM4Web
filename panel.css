@@ -727,3 +727,24 @@ input:checked + .slider:before {
 .katex {
   font-size: 1.1em;
 }
+
+/* 性能指标栏 */
+.metrics-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-color);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  opacity: 0.75;
+  animation: fadeIn 0.3s ease;
+  user-select: none;
+}
+
+.metrics-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
