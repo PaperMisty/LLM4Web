@@ -53,6 +53,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const windowWidthInput = document.getElementById("window-width");
   const windowHeightInput = document.getElementById("window-height");
+  const windowWidthRange = document.getElementById("window-width-range");
+  const windowHeightRange = document.getElementById("window-height-range");
   const windowSizeGroup = document.getElementById("window-size-group");
   const windowSizeHint = document.getElementById("window-size-hint");
   const modelSearchInput = document.getElementById("model-search");
@@ -104,24 +106,52 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (newMode === "sidePanel") {
       windowWidthInput.disabled = true;
       windowHeightInput.disabled = true;
+      windowWidthRange.disabled = true;
+      windowHeightRange.disabled = true;
       windowSizeGroup.classList.add("disabled-option");
       windowSizeHint.innerText = "侧边栏模式由浏览器控制尺寸，无需设置大小。";
     } else {
       windowWidthInput.disabled = false;
       windowHeightInput.disabled = false;
+      windowWidthRange.disabled = false;
+      windowHeightRange.disabled = false;
       windowSizeGroup.classList.remove("disabled-option");
       
       if (newMode === "popup") {
         windowWidthInput.value = cachedPopupWidth;
         windowHeightInput.value = cachedPopupHeight;
+        windowWidthRange.value = cachedPopupWidth;
+        windowHeightRange.value = cachedPopupHeight;
         windowSizeHint.innerText = "设置悬浮小窗口的默认宽度与高度。";
       } else if (newMode === "inPage") {
         windowWidthInput.value = cachedOverlayWidth;
         windowHeightInput.value = cachedOverlayHeight;
+        windowWidthRange.value = cachedOverlayWidth;
+        windowHeightRange.value = cachedOverlayHeight;
         windowSizeHint.innerText = "设置页面内悬浮面板的默认宽度与高度。";
       }
     }
   };
+
+  // 绑定滑块与输入框的联动事件
+  windowWidthRange.addEventListener("input", (e) => {
+    windowWidthInput.value = e.target.value;
+  });
+  windowHeightRange.addEventListener("input", (e) => {
+    windowHeightInput.value = e.target.value;
+  });
+  windowWidthInput.addEventListener("input", (e) => {
+    const val = parseInt(e.target.value);
+    if (!isNaN(val) && val >= 200 && val <= 2000) {
+      windowWidthRange.value = val;
+    }
+  });
+  windowHeightInput.addEventListener("input", (e) => {
+    const val = parseInt(e.target.value);
+    if (!isNaN(val) && val >= 200 && val <= 2000) {
+      windowHeightRange.value = val;
+    }
+  });
 
   let lastDisplayMode = displayModeSelect.value;
   displayModeSelect.addEventListener("change", (e) => {
@@ -303,21 +333,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (lastDisplayMode === "sidePanel") {
       windowWidthInput.disabled = true;
       windowHeightInput.disabled = true;
+      windowWidthRange.disabled = true;
+      windowHeightRange.disabled = true;
       windowSizeGroup.classList.add("disabled-option");
       windowSizeHint.innerText = "侧边栏模式由浏览器控制尺寸，无需设置大小。";
       windowWidthInput.value = 380;
       windowHeightInput.value = 680;
+      windowWidthRange.value = 380;
+      windowHeightRange.value = 680;
     } else {
       windowWidthInput.disabled = false;
       windowHeightInput.disabled = false;
+      windowWidthRange.disabled = false;
+      windowHeightRange.disabled = false;
       windowSizeGroup.classList.remove("disabled-option");
       if (lastDisplayMode === "popup") {
         windowWidthInput.value = cachedPopupWidth;
         windowHeightInput.value = cachedPopupHeight;
+        windowWidthRange.value = cachedPopupWidth;
+        windowHeightRange.value = cachedPopupHeight;
         windowSizeHint.innerText = "设置悬浮小窗口的默认宽度与高度。";
       } else {
         windowWidthInput.value = cachedOverlayWidth;
         windowHeightInput.value = cachedOverlayHeight;
+        windowWidthRange.value = cachedOverlayWidth;
+        windowHeightRange.value = cachedOverlayHeight;
         windowSizeHint.innerText = "设置页面内悬浮面板的默认宽度与高度。";
       }
     }

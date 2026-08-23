@@ -283,22 +283,29 @@ select option {
   position: relative;
 }
 
-.select-wrapper::after {
-  content: "▼";
-  font-size: 10px;
-  color: var(--text-muted);
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
 select {
   appearance: none;
   -webkit-appearance: none;
   padding-right: 40px;
   cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2382755e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+[data-theme="cyber-cyan"] select,
+[data-theme="lavender-purple"] select,
+[data-theme="forest-green"] select,
+[data-theme="classic-dark"] select {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+select:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
+  transform: translateY(-1px);
 }
 
 /* 密码显隐包装器 */
@@ -479,4 +486,123 @@ select {
   border-top-color: #fff;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+/* 现代尺寸调节容器 */
+.modern-size-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 6px;
+}
+
+.size-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="cyber-cyan"] .size-card,
+[data-theme="lavender-purple"] .size-card,
+[data-theme="forest-green"] .size-card,
+[data-theme="classic-dark"] .size-card {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.size-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary-color);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.1);
+}
+
+.size-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.size-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.size-card-value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.size-card-value input[type="number"] {
+  width: 70px !important;
+  padding: 6px 10px !important;
+  font-size: 14px !important;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 8px !important;
+  border: 1px solid var(--input-border) !important;
+  background: var(--input-bg) !important;
+  color: var(--text-main);
+}
+
+.size-card-value .unit {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.slider-wrapper {
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+/* 现代滑动条样式重置 */
+.modern-slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.08);
+  outline: none;
+  margin: 8px 0;
+  transition: background 0.3s;
+}
+
+[data-theme="cyber-cyan"] .modern-slider,
+[data-theme="lavender-purple"] .modern-slider,
+[data-theme="forest-green"] .modern-slider,
+[data-theme="classic-dark"] .modern-slider {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.modern-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  cursor: pointer;
+}
+
+.modern-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: var(--primary-gradient);
+  cursor: pointer;
+  margin-top: -6px; /* 居中于轨道 */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.modern-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.modern-slider::-webkit-slider-thumb:active {
+  transform: scale(0.95);
 }

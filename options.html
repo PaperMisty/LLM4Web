@@ -41,17 +41,34 @@
 
         <!-- 尺寸设置 -->
         <div class="form-group" id="window-size-group">
-          <label for="window-width">悬浮窗口尺寸</label>
-          <div style="display: flex; gap: 12px; align-items: center;">
-            <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 13px; color: var(--text-muted); white-space: nowrap;">宽度</span>
-              <input type="number" id="window-width" min="200" max="3000" required>
-              <span style="font-size: 13px; color: var(--text-muted);">px</span>
+          <label>悬浮窗口尺寸自定义</label>
+          <div class="modern-size-container">
+            <!-- 宽度调节卡片 -->
+            <div class="size-card">
+              <div class="size-card-header">
+                <span class="size-card-title">📐 窗口宽度</span>
+                <span class="size-card-value">
+                  <input type="number" id="window-width" min="200" max="2000" required>
+                  <span class="unit">px</span>
+                </span>
+              </div>
+              <div class="slider-wrapper">
+                <input type="range" id="window-width-range" min="200" max="2000" class="modern-slider">
+              </div>
             </div>
-            <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 13px; color: var(--text-muted); white-space: nowrap;">高度</span>
-              <input type="number" id="window-height" min="200" max="3000" required>
-              <span style="font-size: 13px; color: var(--text-muted);">px</span>
+            
+            <!-- 高度调节卡片 -->
+            <div class="size-card">
+              <div class="size-card-header">
+                <span class="size-card-title">📏 窗口高度</span>
+                <span class="size-card-value">
+                  <input type="number" id="window-height" min="200" max="2000" required>
+                  <span class="unit">px</span>
+                </span>
+              </div>
+              <div class="slider-wrapper">
+                <input type="range" id="window-height-range" min="200" max="2000" class="modern-slider">
+              </div>
             </div>
           </div>
           <span class="help-text" id="window-size-hint">设置悬浮小窗口或页面内悬浮面板的尺寸大小。</span>
