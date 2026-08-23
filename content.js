@@ -19,14 +19,22 @@ chrome.storage.local.get(["displayMode"], (res) => {
   }
 });
 
-// 监听呈现模式切换，动态注入/移除悬浮面板
+// 监听呈现模式切换与尺寸变化，动态注入/移除或缩放悬浮面板
 chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === "local" && changes.displayMode) {
-    displayMode = changes.displayMode.newValue || "inPage";
-    if (displayMode === "inPage") {
-      ensureOverlay();
-    } else {
-      removeOverlay();
+  if (namespace === "local") {
+    if (changes.displayMode) {
+      displayMode = changes.displayMode.newValue || "inPage";
+      if (displayMode === "inPage") {
+        ensureOverlay();
+      } else {
+        removeOverlay();
+      }
+    }
+    if (changes.overlayWidth && overlay) {
+      overlay.style.width = (parseInt(changes.overlayWidth.newValue) || 560) + "px";
+    }
+    if (changes.overlayHeight && overlay) {
+      overlay.style.height = (parseInt(changes.overlayHeight.newValue) || 640) + "px";
     }
   }
 });
@@ -58,14 +66,18 @@ function ensureOverlay() {
   overlay.appendChild(overlayIframe);
   overlay.appendChild(closeBtn);
 
-  // 恢复上次记忆的悬浮位置
-  chrome.storage.local.get(["overlayPos"], (res) => {
+  // 恢复上次记忆的悬浮位置与尺寸
+  chrome.storage.local.get(["overlayPos", "overlayWidth", "overlayHeight"], (res) => {
     const pos = res.overlayPos;
     if (pos && typeof pos.left === "number" && typeof pos.top === "number") {
       overlay.style.left = Math.max(0, pos.left) + "px";
       overlay.style.top = Math.max(0, pos.top) + "px";
       overlay.style.right = "auto";
     }
+    const width = parseInt(res.overlayWidth) || 560;
+    const height = parseInt(res.overlayHeight) || 640;
+    overlay.style.width = width + "px";
+    overlay.style.height = height + "px";
   });
 
   // iframe 加载完成后，补发暂存的划词文本与对应模式

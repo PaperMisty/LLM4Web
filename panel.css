@@ -748,3 +748,55 @@ input:checked + .slider:before {
   align-items: center;
   gap: 4px;
 }
+
+/* 页眉选择器样式 */
+.header-select-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-select {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 6px;
+  max-width: 130px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+[data-theme="cyber-cyan"] .header-select,
+[data-theme="lavender-purple"] .header-select,
+[data-theme="forest-green"] .header-select,
+[data-theme="classic-dark"] .header-select {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.header-select:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--primary-color);
+}
+
+[data-theme="cyber-cyan"] .header-select:hover,
+[data-theme="lavender-purple"] .header-select:hover,
+[data-theme="forest-green"] .header-select:hover,
+[data-theme="classic-dark"] .header-select:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 窄屏适配，防止换行 */
+@media (max-width: 360px) {
+  .header-select {
+    max-width: 85px;
+    font-size: 11px;
+    padding: 2px 4px;
+  }
+  .header-select-group {
+    gap: 4px;
+  }
+}

@@ -13,7 +13,18 @@
     <header class="panel-header">
       <div class="header-left">
         <img src="icons/icon-16.png" alt="Icon" class="header-logo">
-        <div class="header-info">
+        <div class="header-select-group">
+          <select id="header-provider-select" class="header-select" title="切换模型服务商">
+            <option value="siliconflow">SiliconFlow</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="custom">Custom</option>
+          </select>
+          <select id="header-model-select" class="header-select" title="快速切换当前模型">
+            <!-- 动态填充 -->
+          </select>
+        </div>
+        <!-- 保留原本的 DOM 节点以防 panel.js 读写出错，但在页面上隐藏它 -->
+        <div class="header-info" style="display: none;">
           <span class="header-title">LLM4Web AI</span>
           <span id="model-status" class="model-badge">未配置</span>
         </div>

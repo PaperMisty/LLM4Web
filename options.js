@@ -51,6 +51,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   const envBanner = document.getElementById("env-banner");
   const btnImportEnv = document.getElementById("btn-import-env");
 
+  const windowWidthInput = document.getElementById("window-width");
+  const windowHeightInput = document.getElementById("window-height");
+  const windowSizeGroup = document.getElementById("window-size-group");
+  const windowSizeHint = document.getElementById("window-size-hint");
+  const modelSearchInput = document.getElementById("model-search");
+
+  let cachedPopupWidth = 380;
+  let cachedPopupHeight = 680;
+  let cachedOverlayWidth = 560;
+  let cachedOverlayHeight = 640;
+  let currentProviderModels = [];
+
   // 1. 初始化密码显隐切换
   togglePasswordBtn.addEventListener("click", () => {
     const type = apiKeyInput.type === "password" ? "text" : "password";
@@ -78,49 +90,145 @@ document.addEventListener("DOMContentLoaded", async () => {
     closeStrategyGroup.classList.toggle("disabled-option", isInPage);
     closeStrategyHint.classList.toggle("hidden", !isInPage);
   };
-  displayModeSelect.addEventListener("change", syncCloseStrategyState);
+
+  // 呈现模式联动尺寸
+  const syncWindowSizeState = (prevMode, newMode) => {
+    if (prevMode === "popup") {
+      cachedPopupWidth = parseInt(windowWidthInput.value) || 380;
+      cachedPopupHeight = parseInt(windowHeightInput.value) || 680;
+    } else if (prevMode === "inPage") {
+      cachedOverlayWidth = parseInt(windowWidthInput.value) || 560;
+      cachedOverlayHeight = parseInt(windowHeightInput.value) || 640;
+    }
+
+    if (newMode === "sidePanel") {
+      windowWidthInput.disabled = true;
+      windowHeightInput.disabled = true;
+      windowSizeGroup.classList.add("disabled-option");
+      windowSizeHint.innerText = "侧边栏模式由浏览器控制尺寸，无需设置大小。";
+    } else {
+      windowWidthInput.disabled = false;
+      windowHeightInput.disabled = false;
+      windowSizeGroup.classList.remove("disabled-option");
+      
+      if (newMode === "popup") {
+        windowWidthInput.value = cachedPopupWidth;
+        windowHeightInput.value = cachedPopupHeight;
+        windowSizeHint.innerText = "设置悬浮小窗口的默认宽度与高度。";
+      } else if (newMode === "inPage") {
+        windowWidthInput.value = cachedOverlayWidth;
+        windowHeightInput.value = cachedOverlayHeight;
+        windowSizeHint.innerText = "设置页面内悬浮面板的默认宽度与高度。";
+      }
+    }
+  };
+
+  let lastDisplayMode = displayModeSelect.value;
+  displayModeSelect.addEventListener("change", (e) => {
+    const newMode = e.target.value;
+    syncWindowSizeState(lastDisplayMode, newMode);
+    lastDisplayMode = newMode;
+    syncCloseStrategyState();
+  });
 
   // 2. 动态更新模型推荐和默认 URL
-  const updateModelSuggestions = (provider, changeUrl = true, modelToSelect = null) => {
+  const renderModelOptions = (filterText = "") => {
+    const prevValue = modelSelect.value;
+    const prevCustomValue = modelCustom.value;
+    
     modelSelect.innerHTML = "";
-    const preset = PRESETS[provider];
-    if (!preset) return;
-
-    // 填充下拉选项
-    preset.models.forEach(modelName => {
+    const query = filterText.toLowerCase().trim();
+    const filtered = currentProviderModels.filter(m => m.toLowerCase().includes(query));
+    
+    filtered.forEach(modelName => {
       const option = document.createElement("option");
       option.value = modelName;
       option.textContent = modelName;
       modelSelect.appendChild(option);
     });
 
-    // 塞入“自定义输入...”项
     const customOpt = document.createElement("option");
     customOpt.value = "__custom__";
     customOpt.textContent = "⚙️ 自定义输入...";
     modelSelect.appendChild(customOpt);
 
-    // 默认高亮及显示逻辑
-    if (modelToSelect) {
-      const exists = preset.models.includes(modelToSelect);
-      if (exists) {
-        modelSelect.value = modelToSelect;
+    if (prevValue === "__custom__") {
+      modelSelect.value = "__custom__";
+      modelCustom.value = prevCustomValue;
+    } else if (filtered.includes(prevValue)) {
+      modelSelect.value = prevValue;
+    } else if (filtered.length > 0) {
+      modelSelect.value = filtered[0];
+    } else {
+      modelSelect.value = "__custom__";
+    }
+    
+    modelSelect.dispatchEvent(new Event("change"));
+  };
+
+  modelSearchInput.addEventListener("input", (e) => {
+    renderModelOptions(e.target.value);
+  });
+
+  modelSearchInput.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (modelSelect.options.length > 0) {
+        let nextIndex = modelSelect.selectedIndex + 1;
+        if (nextIndex >= modelSelect.options.length) nextIndex = 0;
+        modelSelect.selectedIndex = nextIndex;
+        modelSelect.dispatchEvent(new Event("change"));
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (modelSelect.options.length > 0) {
+        let prevIndex = modelSelect.selectedIndex - 1;
+        if (prevIndex < 0) prevIndex = modelSelect.options.length - 1;
+        modelSelect.selectedIndex = prevIndex;
+        modelSelect.dispatchEvent(new Event("change"));
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      modelSearchInput.blur();
+      showToast(`已选定模型: ${modelSelect.value === "__custom__" ? "自定义输入" : modelSelect.value}`);
+    }
+  });
+
+  const updateModelSuggestions = (provider, changeUrl = true, modelToSelect = null) => {
+    const preset = PRESETS[provider];
+    if (!preset) return;
+
+    chrome.storage.local.get([`models_${provider}`], (result) => {
+      let modelsList = result[`models_${provider}`];
+      if (!modelsList || !Array.isArray(modelsList)) {
+        modelsList = preset.models;
+      }
+      
+      currentProviderModels = [...modelsList];
+      modelSearchInput.value = "";
+      renderModelOptions("");
+
+      if (modelToSelect) {
+        const exists = currentProviderModels.includes(modelToSelect);
+        if (exists) {
+          modelSelect.value = modelToSelect;
+          modelCustom.classList.add("hidden");
+          modelCustom.required = false;
+          modelCustom.value = "";
+        } else {
+          modelSelect.value = "__custom__";
+          modelCustom.classList.remove("hidden");
+          modelCustom.required = true;
+          modelCustom.value = modelToSelect;
+        }
+      } else {
+        modelSelect.value = preset.defaultModel;
         modelCustom.classList.add("hidden");
         modelCustom.required = false;
         modelCustom.value = "";
-      } else {
-        modelSelect.value = "__custom__";
-        modelCustom.classList.remove("hidden");
-        modelCustom.required = true;
-        modelCustom.value = modelToSelect;
       }
-    } else {
-      // 默认选中 Preset 中的第一个默认值
-      modelSelect.value = preset.defaultModel;
-      modelCustom.classList.add("hidden");
-      modelCustom.required = false;
-      modelCustom.value = "";
-    }
+      modelSelect.dispatchEvent(new Event("change"));
+    });
 
     if (changeUrl) {
       if (envConfig) {
@@ -178,10 +286,41 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // 3. 从 storage 加载已保存配置
-  chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model", "displayMode", "closeStrategy", "theme"], (result) => {
+  chrome.storage.local.get([
+    "provider", "apiKey", "baseUrl", "model", "displayMode", "closeStrategy", "theme",
+    "popupWidth", "popupHeight", "overlayWidth", "overlayHeight"
+  ], (result) => {
+    cachedPopupWidth = result.popupWidth || 380;
+    cachedPopupHeight = result.popupHeight || 680;
+    cachedOverlayWidth = result.overlayWidth || 560;
+    cachedOverlayHeight = result.overlayHeight || 640;
+
     displayModeSelect.value = result.displayMode || "inPage";
     closeStrategySelect.value = result.closeStrategy || "manual";
-    syncCloseStrategyState(); // 根据已保存的呈现模式同步关闭方式选项状态
+    syncCloseStrategyState();
+    
+    lastDisplayMode = displayModeSelect.value;
+    if (lastDisplayMode === "sidePanel") {
+      windowWidthInput.disabled = true;
+      windowHeightInput.disabled = true;
+      windowSizeGroup.classList.add("disabled-option");
+      windowSizeHint.innerText = "侧边栏模式由浏览器控制尺寸，无需设置大小。";
+      windowWidthInput.value = 380;
+      windowHeightInput.value = 680;
+    } else {
+      windowWidthInput.disabled = false;
+      windowHeightInput.disabled = false;
+      windowSizeGroup.classList.remove("disabled-option");
+      if (lastDisplayMode === "popup") {
+        windowWidthInput.value = cachedPopupWidth;
+        windowHeightInput.value = cachedPopupHeight;
+        windowSizeHint.innerText = "设置悬浮小窗口的默认宽度与高度。";
+      } else {
+        windowWidthInput.value = cachedOverlayWidth;
+        windowHeightInput.value = cachedOverlayHeight;
+        windowSizeHint.innerText = "设置页面内悬浮面板的默认宽度与高度。";
+      }
+    }
     
     const currentTheme = result.theme || "warm-amber";
     themeSelectSelect.value = currentTheme;
@@ -310,23 +449,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (response && response.success) {
         const currentSelected = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
+        const currentProvider = providerSelect.value;
         
-        // 重新填充下拉框
-        modelSelect.innerHTML = "";
-        response.models.forEach(modelId => {
-          const option = document.createElement("option");
-          option.value = modelId;
-          option.textContent = modelId;
-          modelSelect.appendChild(option);
-        });
+        // 保存拉取到的模型到 storage
+        chrome.storage.local.set({ [`models_${currentProvider}`]: response.models });
+        
+        currentProviderModels = [...response.models];
+        modelSearchInput.value = "";
+        renderModelOptions("");
 
-        // 重新塞入自定义选项
-        const customOpt = document.createElement("option");
-        customOpt.value = "__custom__";
-        customOpt.textContent = "⚙️ 自定义输入...";
-        modelSelect.appendChild(customOpt);
-
-        // 如果刚才选中的值在拉取到的新列表中，保持选中，否则归为自定义
         if (response.models.includes(currentSelected)) {
           modelSelect.value = currentSelected;
           modelCustom.classList.add("hidden");
@@ -337,6 +468,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           modelCustom.required = true;
           modelCustom.value = currentSelected;
         }
+        modelSelect.dispatchEvent(new Event("change"));
 
         showToast(`✅ 成功拉取并更新了 ${response.models.length} 个模型！`);
       } else {
@@ -406,6 +538,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
+    if (displayMode === "popup") {
+      cachedPopupWidth = parseInt(windowWidthInput.value) || 380;
+      cachedPopupHeight = parseInt(windowHeightInput.value) || 680;
+    } else if (displayMode === "inPage") {
+      cachedOverlayWidth = parseInt(windowWidthInput.value) || 560;
+      cachedOverlayHeight = parseInt(windowHeightInput.value) || 640;
+    }
+
     const btnSave = document.getElementById("btn-save");
     const spinner = btnSave.querySelector(".spinner");
     btnSave.disabled = true;
@@ -419,6 +559,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       baseUrl,
       apiKey,
       model,
+      popupWidth: cachedPopupWidth,
+      popupHeight: cachedPopupHeight,
+      overlayWidth: cachedOverlayWidth,
+      overlayHeight: cachedOverlayHeight,
       [`key_${provider}`]: apiKey,
       [`url_${provider}`]: baseUrl,
       [`model_${provider}`]: model

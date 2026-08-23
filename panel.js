@@ -1,3 +1,40 @@
+// 预设模型列表，用于页眉选择器兜底
+const PRESETS = {
+  siliconflow: {
+    defaultUrl: "https://api.siliconflow.cn/v1",
+    defaultModel: "deepseek-ai/DeepSeek-R1",
+    models: [
+      "deepseek-ai/DeepSeek-R1",
+      "deepseek-ai/DeepSeek-V3",
+      "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+      "deepseek-ai/DeepSeek-R1-Distill-Qwen-8B",
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+      "Qwen/Qwen2.5-72B-Instruct",
+      "Qwen/Qwen2.5-Coder-32B-Instruct"
+    ]
+  },
+  deepseek: {
+    defaultUrl: "https://api.deepseek.com",
+    defaultModel: "deepseek-reasoner",
+    models: [
+      "deepseek-reasoner",
+      "deepseek-chat",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash"
+    ]
+  },
+  custom: {
+    defaultUrl: "http://localhost:11434/v1",
+    defaultModel: "llama3",
+    models: [
+      "gpt-4o",
+      "gpt-4-turbo",
+      "gpt-3.5-turbo",
+      "meta-llama/Llama-3-70b-instruct"
+    ]
+  }
+};
+
 let chatHistory = []; // 存储当前会话的上下文
 let isStreaming = false;
 let currentPort = null;
@@ -15,6 +52,8 @@ const modelStatusEl = document.getElementById("model-status");
 const setupWarningEl = document.getElementById("setup-warning");
 const btnGoToSettingsEl = document.getElementById("btn-go-to-settings");
 const thinkingToggleContainer = document.getElementById("thinking-toggle-container");
+const headerProviderSelect = document.getElementById("header-provider-select");
+const headerModelSelect = document.getElementById("header-model-select");
 
 // 1. 初始化页面并读取配置
 document.addEventListener("DOMContentLoaded", () => {
@@ -44,8 +83,8 @@ function initEmbeddedMode() {
   const headerEl = document.querySelector(".panel-header");
   if (headerEl) {
     headerEl.addEventListener("mousedown", (e) => {
-      // 排除交互控件（思考开关、垃圾桶、设置、清空等按钮）
-      if (e.target.closest("button") || e.target.closest("input") || e.target.closest("label") || e.target.closest(".switch")) {
+      // 排除交互控件（思考开关、垃圾桶、设置、清空等按钮、下拉菜单）
+      if (e.target.closest("button") || e.target.closest("input") || e.target.closest("select") || e.target.closest("label") || e.target.closest(".switch")) {
         return;
       }
       e.preventDefault();
@@ -69,6 +108,38 @@ function loadConfig() {
     // 如果没有配置过的“思考”开关状态，默认设为开启
     const enableThinking = result.enableThinking !== false;
     cbThinkingEl.checked = enableThinking;
+
+    const currentProvider = result.provider || "siliconflow";
+    const currentModel = result.model || "";
+
+    // 填充与回填页眉下拉菜单
+    headerProviderSelect.value = currentProvider;
+
+    const cacheKeyModels = `models_${currentProvider}`;
+    chrome.storage.local.get([cacheKeyModels], (modelsResult) => {
+      let modelsList = modelsResult[cacheKeyModels];
+      if (!modelsList || !Array.isArray(modelsList)) {
+        modelsList = PRESETS[currentProvider]?.models || [];
+      }
+
+      headerModelSelect.innerHTML = "";
+      modelsList.forEach(m => {
+        const option = document.createElement("option");
+        option.value = m;
+        option.textContent = m;
+        headerModelSelect.appendChild(option);
+      });
+
+      // 如果当前模型不在列表中，动态追加（例如用户手动输入的自定义模型）
+      if (currentModel && !modelsList.includes(currentModel)) {
+        const option = document.createElement("option");
+        option.value = currentModel;
+        option.textContent = currentModel;
+        headerModelSelect.appendChild(option);
+      }
+
+      headerModelSelect.value = currentModel;
+    });
 
     if (!result.apiKey || !result.baseUrl || !result.model) {
       setupWarningEl.classList.remove("hidden");
@@ -109,6 +180,33 @@ function initEventListeners() {
   };
   btnSettingsEl.addEventListener("click", openSettings);
   btnGoToSettingsEl.addEventListener("click", openSettings);
+
+  // 页眉提供商选择框改变事件
+  headerProviderSelect.addEventListener("change", (e) => {
+    const newProvider = e.target.value;
+    chrome.storage.local.get([`key_${newProvider}`, `url_${newProvider}`, `model_${newProvider}`], (res) => {
+      const apiKey = res[`key_${newProvider}`] || "";
+      const baseUrl = res[`url_${newProvider}`] || "";
+      const savedModel = res[`model_${newProvider}`] || PRESETS[newProvider].defaultModel;
+
+      chrome.storage.local.set({
+        provider: newProvider,
+        apiKey: apiKey,
+        baseUrl: baseUrl,
+        model: savedModel
+      });
+    });
+  });
+
+  // 页眉模型选择框改变事件
+  headerModelSelect.addEventListener("change", (e) => {
+    const newModel = e.target.value;
+    const provider = headerProviderSelect.value;
+    chrome.storage.local.set({
+      model: newModel,
+      [`model_${provider}`]: newModel
+    });
+  });
 
   // 清空对话
   btnClearEl.addEventListener("click", () => {

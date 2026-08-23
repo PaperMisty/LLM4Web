@@ -39,6 +39,24 @@
           </div>
         </div>
 
+        <!-- 尺寸设置 -->
+        <div class="form-group" id="window-size-group">
+          <label for="window-width">悬浮窗口尺寸</label>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 13px; color: var(--text-muted); white-space: nowrap;">宽度</span>
+              <input type="number" id="window-width" min="200" max="3000" required>
+              <span style="font-size: 13px; color: var(--text-muted);">px</span>
+            </div>
+            <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 13px; color: var(--text-muted); white-space: nowrap;">高度</span>
+              <input type="number" id="window-height" min="200" max="3000" required>
+              <span style="font-size: 13px; color: var(--text-muted);">px</span>
+            </div>
+          </div>
+          <span class="help-text" id="window-size-hint">设置悬浮小窗口或页面内悬浮面板的尺寸大小。</span>
+        </div>
+
         <!-- 窗口关闭策略 -->
         <div class="form-group" id="close-strategy-group">
           <label for="close-strategy">小窗口关闭方式 (Close Strategy)</label>
@@ -102,6 +120,7 @@
         <div class="form-group">
           <label for="model-select">模型 (Model Name)</label>
           <div class="input-suggest-wrapper" style="display: flex; flex-direction: column; gap: 8px;">
+            <input type="text" id="model-search" placeholder="🔍 输入关键字过滤模型列表..." style="margin-bottom: 4px;">
             <select id="model-select" required>
               <!-- 动态根据 Provider 插入，且最末包含“自定义输入...”项 -->
             </select>
