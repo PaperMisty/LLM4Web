@@ -5,7 +5,8 @@
   "description": "基于 SiliconFlow 与 DeepSeek 官方 API 的轻量级流式 AI 侧边栏/Panel 助手",
   "permissions": [
     "storage",
-    "sidePanel"
+    "sidePanel",
+    "contextMenus"
   ],
   "background": {
     "service_worker": "background.js"

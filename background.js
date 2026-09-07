@@ -6,6 +6,37 @@ chrome.storage.local.get(["displayMode"], (res) => {
   updateActionBehavior(res.displayMode || "inPage");
 });
 
+// 初始化右键上下文菜单（支持网页全篇翻译）
+function initContextMenus() {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "llm4web-translate-page",
+      title: "🌐 网页全篇翻译 (LLM4Web)",
+      contexts: ["page", "selection"]
+    }, () => {
+      if (chrome.runtime.lastError) {
+        // 忽略创建失败
+      }
+    });
+  });
+}
+
+chrome.runtime.onInstalled.addListener(initContextMenus);
+chrome.runtime.onStartup.addListener(initContextMenus);
+initContextMenus();
+
+// 监听右键上下文菜单点击
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "llm4web-translate-page" && tab && tab.id) {
+    chrome.tabs.sendMessage(tab.id, { type: "START_PAGE_TRANSLATION" }, () => {
+      if (chrome.runtime.lastError) {
+        // 当前页面不支持或尚未注入 content script（如 chrome:// 保护页）
+        console.warn("[LLM4Web] 无法在当前页面启动翻译:", chrome.runtime.lastError.message);
+      }
+    });
+  }
+});
+
 // 启发式判断模型是否支持推理/思考
 function isThinkingSupported(modelName) {
   if (!modelName) return false;
@@ -115,12 +146,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     lastExplainTime = Date.now(); // 记录当前时间，挂起失警自动关闭
     const selectedText = request.text;
     const selectedMode = request.mode || "medium";
+    const promptName = request.promptName || "";
+    const promptTemplate = request.promptTemplate || "";
     const contextPrefix = request.contextPrefix || "";
     const contextSuffix = request.contextSuffix || "";
-    // 1. 将选中文本、对应模式以及上下文环境写入 storage 暂存
+    // 1. 将选中文本、对应模式/自定义Prompt以及上下文环境写入 storage 暂存
     chrome.storage.local.set({ 
       pendingSelection: selectedText,
       pendingMode: selectedMode,
+      pendingPromptName: promptName,
+      pendingPromptTemplate: promptTemplate,
       pendingPrefix: contextPrefix,
       pendingSuffix: contextSuffix
     }, () => {
@@ -139,6 +174,92 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     sendResponse({ success: true });
     return true;
+  }
+
+  if (request.type === "TRANSLATE_BATCH") {
+    const { items } = request;
+    if (!items || !items.length) {
+      sendResponse({ success: true, results: [] });
+      return true;
+    }
+
+    chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model"], async (cfg) => {
+      const { provider, apiKey, baseUrl, model } = cfg;
+      if (!apiKey || !baseUrl || !model) {
+        sendResponse({ success: false, error: "请先在 LLM4Web 设置中配置 API Key 与模型！" });
+        return;
+      }
+
+      // 组织编号列表，保留完整段落上下文
+      const numberedText = items.map(it => `[${it.id}] ${it.text}`).join("\n\n");
+      const systemPrompt = `你是一个专业的网页翻译引擎。你的任务是将用户提供的网页段落翻译成简体中文。
+请结合全部段落的完整上下文进行连贯、通顺、地道的专业翻译，避免断章取义。
+
+【输出格式极度严格要求】：
+1. 每一段翻译结果必须严格按如下格式输出，务必保留对应的原序号标号：
+[序号] 翻译后的中文文本
+2. 严禁合并、遗漏或跳过任何一个序号！
+3. 请直接输出翻译结果，绝对不要输出任何问候、开场白、总结或额外解释说明！`;
+
+      const requestBody = {
+        model: model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: numberedText }
+        ],
+        stream: false,
+        temperature: 0.3
+      };
+
+      try {
+        const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          let errJson;
+          try { errJson = JSON.parse(errText); } catch(e) {}
+          throw new Error(errJson?.message || errJson?.error?.message || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content || "";
+
+        // 解析 [id] 对应的翻译
+        const results = [];
+        const pattern = /\[(\d+)\]\s*([\s\S]*?)(?=(?:\[\d+\]|$))/g;
+        let match;
+        const parsedMap = new Map();
+        while ((match = pattern.exec(content)) !== null) {
+          const id = parseInt(match[1]);
+          const trans = match[2].trim();
+          parsedMap.set(id, trans);
+        }
+
+        // 整理返回列表
+        items.forEach(it => {
+          const trans = parsedMap.get(it.id) || "";
+          results.push({
+            id: it.id,
+            translatedText: trans
+          });
+        });
+
+        sendResponse({ success: true, results: results });
+      } catch (err) {
+        console.error("网页段落翻译请求失败:", err);
+        sendResponse({ success: false, error: err.message || "翻译请求出错" });
+      }
+    });
+
+    return true; // 保持异步通道
   }
 });
 

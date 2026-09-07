@@ -156,6 +156,29 @@
           <span class="help-text">拉取最新模型可以更新下拉菜单；测试连接能够自动探测当前模型是否支持推理模式（Thinking）。</span>
         </div>
 
+        <!-- 划词提示词 / System Prompt 自定义管理 -->
+        <div class="form-group prompts-manager-group">
+          <div class="prompts-manager-header">
+            <div>
+              <label>划词快捷提示词 / 模式解耦 (Prompts CRUD)</label>
+              <span class="help-text">此处配置的提示词将直接渲染到网页划词后浮现的操作小药丸中。支持自定义增删改查。</span>
+            </div>
+            <div class="prompts-actions">
+              <button type="button" id="btn-reset-prompts" class="btn-secondary-action" title="恢复为默认的“简易/中等/复杂”三个预设">
+                <span>🔄 恢复默认预设</span>
+              </button>
+              <button type="button" id="btn-add-prompt" class="btn-secondary-action btn-add-prompt" title="新增自定义提示词">
+                <span>➕ 新增提示词</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 提示词卡片列表容器 -->
+          <div id="prompts-list" class="prompts-list">
+            <!-- 动态渲染提示词项 -->
+          </div>
+        </div>
+
         <!-- 提交区域 -->
         <div class="form-actions">
           <button type="submit" id="btn-save" class="btn-primary">
@@ -165,6 +188,41 @@
         </div>
       </form>
     </main>
+
+    <!-- 提示词编辑/新增模态框 -->
+    <div id="prompt-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="modal-title" class="modal-title">新增划词提示词</h3>
+          <button type="button" id="btn-modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <form id="prompt-form" class="modal-body">
+          <input type="hidden" id="prompt-id">
+          
+          <div class="modal-row">
+            <div class="form-group flex-1">
+              <label for="prompt-icon">图标 Emoji</label>
+              <input type="text" id="prompt-icon" placeholder="⚡" maxlength="4" required>
+            </div>
+            <div class="form-group flex-3">
+              <label for="prompt-name">操作名称 (按钮文字)</label>
+              <input type="text" id="prompt-name" placeholder="例如：简易、润色、代码解释" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="prompt-template">提示词模板 (System / User Prompt)</label>
+            <textarea id="prompt-template" rows="5" placeholder="请输入发给大模型的提示词。支持使用 {text} 表示划选文本，使用 {context} 表示前后文语境。" required></textarea>
+            <span class="help-text">提示：可在模板中加入 <code>{text}</code>（选中的文本）与 <code>{context}</code>（网页前后文背景）。</span>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" id="btn-modal-cancel" class="btn-secondary">取消</button>
+            <button type="submit" id="btn-modal-save" class="btn-primary">保存提示词</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <!-- 浮动提示通知 -->
     <div id="toast" class="toast hidden"></div>

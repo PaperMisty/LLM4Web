@@ -74,7 +74,14 @@ function initEmbeddedMode() {
   window.addEventListener("message", (e) => {
     const data = e.data;
     if (data && typeof data === "object" && data.type === "LLM4WEB_EXPLAIN" && typeof data.text === "string") {
-      triggerExplain(data.text, data.mode || "medium", data.prefix || "", data.suffix || "");
+      triggerExplain(
+        data.text,
+        data.mode || "medium",
+        data.prefix || "",
+        data.suffix || "",
+        data.promptName || "",
+        data.promptTemplate || ""
+      );
     }
   });
 
@@ -267,12 +274,14 @@ function initEventListeners() {
     if (namespace === "local") {
       if (changes.pendingSelection && changes.pendingSelection.newValue) {
         const selection = changes.pendingSelection.newValue;
-        chrome.storage.local.get(["pendingMode", "pendingPrefix", "pendingSuffix"], (res) => {
+        chrome.storage.local.get(["pendingMode", "pendingPrefix", "pendingSuffix", "pendingPromptName", "pendingPromptTemplate"], (res) => {
           const mode = res.pendingMode || "medium";
           const prefix = res.pendingPrefix || "";
           const suffix = res.pendingSuffix || "";
-          chrome.storage.local.remove(["pendingSelection", "pendingMode", "pendingPrefix", "pendingSuffix"], () => {
-            triggerExplain(selection, mode, prefix, suffix);
+          const promptName = res.pendingPromptName || "";
+          const promptTemplate = res.pendingPromptTemplate || "";
+          chrome.storage.local.remove(["pendingSelection", "pendingMode", "pendingPrefix", "pendingSuffix", "pendingPromptName", "pendingPromptTemplate"], () => {
+            triggerExplain(selection, mode, prefix, suffix, promptName, promptTemplate);
           });
         });
       } else {
@@ -284,21 +293,23 @@ function initEventListeners() {
 
 // 检查并提取待解释的网页选中文本
 function checkPendingSelection() {
-  chrome.storage.local.get(["pendingSelection", "pendingMode", "pendingPrefix", "pendingSuffix"], (res) => {
+  chrome.storage.local.get(["pendingSelection", "pendingMode", "pendingPrefix", "pendingSuffix", "pendingPromptName", "pendingPromptTemplate"], (res) => {
     if (res.pendingSelection) {
       const selection = res.pendingSelection;
       const mode = res.pendingMode || "medium";
       const prefix = res.pendingPrefix || "";
       const suffix = res.pendingSuffix || "";
-      chrome.storage.local.remove(["pendingSelection", "pendingMode", "pendingPrefix", "pendingSuffix"], () => {
-        triggerExplain(selection, mode, prefix, suffix);
+      const promptName = res.pendingPromptName || "";
+      const promptTemplate = res.pendingPromptTemplate || "";
+      chrome.storage.local.remove(["pendingSelection", "pendingMode", "pendingPrefix", "pendingSuffix", "pendingPromptName", "pendingPromptTemplate"], () => {
+        triggerExplain(selection, mode, prefix, suffix, promptName, promptTemplate);
       });
     }
   });
 }
 
-// 触发解释选中文本的对话动作
-function triggerExplain(text, mode = "medium", prefix = "", suffix = "") {
+// 触发解释选中文本的对话动作（已解耦为支持任意自定义 Prompt 模板）
+function triggerExplain(text, mode = "medium", prefix = "", suffix = "", promptName = "", promptTemplate = "") {
   if (!text) return;
   welcomeViewEl.classList.add("hidden");
 
@@ -308,9 +319,23 @@ function triggerExplain(text, mode = "medium", prefix = "", suffix = "") {
     contextPrompt = `\n[划词所处的网页上下文环境（仅供辅助理解背景，请优先聚焦在解释划词文本本身上）：]\n前文："${prefix}"\n划词目标："${text}"\n后文："${suffix}"\n\n`;
   }
 
-  // 2. 组装只面向模型的完整底层提示词指令（包含约束条件）
+  // 2. 组装只面向模型的完整底层提示词指令
   let apiText = "";
-  if (mode === "easy") {
+  if (promptTemplate) {
+    let replaced = promptTemplate;
+    if (replaced.includes("{context}")) {
+      replaced = replaced.replace(/\{context\}/g, contextPrompt);
+    } else if (contextPrompt) {
+      replaced = contextPrompt + replaced;
+    }
+
+    if (replaced.includes("{text}")) {
+      replaced = replaced.replace(/\{text\}/g, text);
+    } else {
+      replaced = `${replaced}\n\n"${text}"`;
+    }
+    apiText = replaced;
+  } else if (mode === "easy") {
     apiText = `请帮我简明扼要地解释以下内容。${contextPrompt}（请严格限制在 50 个 Token 左右，回答必须极其简短、直奔主题，无需任何客套与前缀说明）：\n\n"${text}"`;
   } else if (mode === "complex") {
     apiText = `请帮我深入、详细地解释以下内容。${contextPrompt} (请不受任何字数 and 长度限制，结合上述上下文环境提供尽可能详尽、专业的剖析、背景脉络与学术拓展讲解)：\n\n"${text}"`;
@@ -320,7 +345,8 @@ function triggerExplain(text, mode = "medium", prefix = "", suffix = "") {
   }
 
   // 3. 组装展示给用户的纯净文字（不污染聊天记录上下文）
-  const uiText = `📖 解释选中文本：\n"${text}"`;
+  const displayActionName = promptName ? promptName : (mode === "easy" ? "简易解释" : (mode === "complex" ? "复杂解析" : "解释选中文本"));
+  const uiText = `📖 ${displayActionName}：\n"${text}"`;
   
   // 延迟一小会儿，确保 UI 已经聚焦且配置已加载完成
   setTimeout(() => {

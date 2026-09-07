@@ -35,6 +35,31 @@ const PRESETS = {
   }
 };
 
+// 预设默认划词提示词
+const DEFAULT_PROMPTS = [
+  {
+    id: "easy",
+    name: "简易",
+    icon: "⚡",
+    systemPrompt: "请帮我简明扼要地解释以下内容。{context}（请严格限制在 50 个 Token 左右，回答必须极其简短、直奔主题，无需任何客套与前缀说明）：\n\n\"{text}\"",
+    isDefault: true
+  },
+  {
+    id: "medium",
+    name: "中等",
+    icon: "🧠",
+    systemPrompt: "请帮我解释以下内容。{context}（请控制在 200 个 Token 左右，结合上述上下文环境简明说明其核心要义即可，直击要点）：\n\n\"{text}\"",
+    isDefault: true
+  },
+  {
+    id: "complex",
+    name: "复杂",
+    icon: "🎓",
+    systemPrompt: "请帮我深入、详细地解释以下内容。{context} (请不受任何字数 and 长度限制，结合上述上下文环境提供尽可能详尽、专业的剖析、背景脉络与学术拓展讲解)：\n\n\"{text}\"",
+    isDefault: true
+  }
+];
+
 let envConfig = null; // 用于缓存解析出来的 .env 配置
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -58,6 +83,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   const windowSizeGroup = document.getElementById("window-size-group");
   const windowSizeHint = document.getElementById("window-size-hint");
   const modelSearchInput = document.getElementById("model-search");
+
+  // 提示词管理相关 DOM 元素
+  const promptsListEl = document.getElementById("prompts-list");
+  const btnAddPrompt = document.getElementById("btn-add-prompt");
+  const btnResetPrompts = document.getElementById("btn-reset-prompts");
+  const promptModal = document.getElementById("prompt-modal");
+  const promptForm = document.getElementById("prompt-form");
+  const promptIdInput = document.getElementById("prompt-id");
+  const promptIconInput = document.getElementById("prompt-icon");
+  const promptNameInput = document.getElementById("prompt-name");
+  const promptTemplateInput = document.getElementById("prompt-template");
+  const modalTitle = document.getElementById("modal-title");
+  const btnModalClose = document.getElementById("btn-modal-close");
+  const btnModalCancel = document.getElementById("btn-modal-cancel");
+
+  let customPrompts = [];
 
   let cachedPopupWidth = 380;
   let cachedPopupHeight = 680;
@@ -373,6 +414,175 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const savedModel = result.model || PRESETS[savedProvider].defaultModel;
     updateModelSuggestions(savedProvider, false, savedModel);
+  });
+
+  // 3.5 提示词 (Prompts CRUD) 渲染与管理逻辑
+  chrome.storage.local.get(["customPrompts"], (res) => {
+    if (res.customPrompts && Array.isArray(res.customPrompts) && res.customPrompts.length > 0) {
+      customPrompts = res.customPrompts;
+    } else {
+      customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS));
+      chrome.storage.local.set({ customPrompts });
+    }
+    renderPromptsList();
+  });
+
+  function renderPromptsList() {
+    promptsListEl.innerHTML = "";
+    if (customPrompts.length === 0) {
+      promptsListEl.innerHTML = `<div style="text-align:center; padding: 16px; color: var(--text-muted); font-size: 13px;">暂无提示词，请点击上方“新增提示词”或“恢复默认预设”</div>`;
+      return;
+    }
+
+    customPrompts.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "prompt-card";
+
+      const main = document.createElement("div");
+      main.className = "prompt-card-main";
+
+      const header = document.createElement("div");
+      header.className = "prompt-card-header";
+
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "prompt-card-icon";
+      iconSpan.textContent = item.icon || "💡";
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "prompt-card-name";
+      nameSpan.textContent = item.name || "未命名提示词";
+
+      header.appendChild(iconSpan);
+      header.appendChild(nameSpan);
+
+      if (item.isDefault) {
+        const badge = document.createElement("span");
+        badge.className = "prompt-badge-default";
+        badge.textContent = "预设";
+        header.appendChild(badge);
+      }
+
+      const tplDiv = document.createElement("div");
+      tplDiv.className = "prompt-card-template";
+      tplDiv.textContent = item.systemPrompt || "";
+
+      main.appendChild(header);
+      main.appendChild(tplDiv);
+
+      const actions = document.createElement("div");
+      actions.className = "prompt-card-actions";
+
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "btn-card-action";
+      editBtn.textContent = "编辑";
+      editBtn.addEventListener("click", () => openEditModal(item));
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn-card-action delete";
+      delBtn.textContent = "删除";
+      delBtn.addEventListener("click", () => deletePrompt(item.id));
+
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
+
+      card.appendChild(main);
+      card.appendChild(actions);
+      promptsListEl.appendChild(card);
+    });
+  }
+
+  function openAddModal() {
+    modalTitle.textContent = "新增划词提示词";
+    promptIdInput.value = "";
+    promptIconInput.value = "💡";
+    promptNameInput.value = "";
+    promptTemplateInput.value = `请帮我解释以下内容。{context}（请结合上下文简要解析）：\n\n"{text}"`;
+    promptModal.classList.remove("hidden");
+  }
+
+  function openEditModal(item) {
+    modalTitle.textContent = "编辑划词提示词";
+    promptIdInput.value = item.id;
+    promptIconInput.value = item.icon || "💡";
+    promptNameInput.value = item.name || "";
+    promptTemplateInput.value = item.systemPrompt || "";
+    promptModal.classList.remove("hidden");
+  }
+
+  function closeModal() {
+    promptModal.classList.add("hidden");
+  }
+
+  function deletePrompt(id) {
+    if (confirm("确定要删除该提示词吗？网页划词面板中将不再出现此按钮。")) {
+      customPrompts = customPrompts.filter(p => p.id !== id);
+      chrome.storage.local.set({ customPrompts }, () => {
+        renderPromptsList();
+        showToast("🗑️ 提示词已删除");
+      });
+    }
+  }
+
+  btnModalClose.addEventListener("click", closeModal);
+  btnModalCancel.addEventListener("click", closeModal);
+  promptModal.addEventListener("click", (e) => {
+    if (e.target === promptModal) closeModal();
+  });
+
+  btnAddPrompt.addEventListener("click", openAddModal);
+
+  btnResetPrompts.addEventListener("click", () => {
+    if (confirm("确定要恢复默认预设吗？当前配置将被重置为“简易/中等/复杂”三个官方预设。")) {
+      customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS));
+      chrome.storage.local.set({ customPrompts }, () => {
+        renderPromptsList();
+        showToast("🔄 提示词已恢复为默认预设");
+      });
+    }
+  });
+
+  promptForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const id = promptIdInput.value.trim();
+    const icon = promptIconInput.value.trim() || "💡";
+    const name = promptNameInput.value.trim();
+    const systemPrompt = promptTemplateInput.value.trim();
+
+    if (!name || !systemPrompt) {
+      showToast("⚠️ 操作名称与提示词模板不能为空");
+      return;
+    }
+
+    if (id) {
+      // 编辑已有项
+      const index = customPrompts.findIndex(p => p.id === id);
+      if (index !== -1) {
+        customPrompts[index] = {
+          ...customPrompts[index],
+          icon,
+          name,
+          systemPrompt
+        };
+      }
+    } else {
+      // 新增项
+      const newPrompt = {
+        id: "prompt_" + Date.now(),
+        icon,
+        name,
+        systemPrompt,
+        isDefault: false
+      };
+      customPrompts.push(newPrompt);
+    }
+
+    chrome.storage.local.set({ customPrompts }, () => {
+      renderPromptsList();
+      closeModal();
+      showToast("✅ 提示词已成功保存！");
+    });
   });
 
   // 绑定实时换肤

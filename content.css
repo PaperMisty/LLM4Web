@@ -51,6 +51,13 @@
   box-shadow: 0 0 6px rgba(168, 85, 247, 0.2) !important;
 }
 
+/* 动态自定义 Prompt 按钮 Hover 效果 */
+.llm4web-bar-btn:hover {
+  color: #38bdf8 !important;
+  background: rgba(56, 189, 248, 0.15) !important;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.2) !important;
+}
+
 /* 弹出动画 */
 @keyframes llm4web-pop-in {
   from {
@@ -144,4 +151,139 @@
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+/* ================= 网页全篇翻译控制浮条 (Translation Floating Bar) ================= */
+.llm4web-trans-bar {
+  position: fixed !important;
+  top: 16px !important;
+  right: 24px !important;
+  z-index: 2147483647 !important;
+  width: 320px !important;
+  padding: 14px 16px !important;
+  background: rgba(15, 23, 42, 0.92) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(59, 130, 246, 0.4) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 12px rgba(59, 130, 246, 0.25) !important;
+  color: #f8fafc !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  animation: llm4web-pop-in 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+  user-select: none !important;
+}
+
+.llm4web-trans-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-bottom: 8px !important;
+}
+
+.llm4web-trans-title-area {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.llm4web-trans-icon {
+  font-size: 16px !important;
+  line-height: 1 !important;
+}
+
+.llm4web-trans-title {
+  font-weight: 700 !important;
+  font-size: 13.5px !important;
+  color: #38bdf8 !important;
+}
+
+.llm4web-trans-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.llm4web-trans-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #e2e8f0 !important;
+  padding: 3px 8px !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.llm4web-trans-btn:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.llm4web-trans-btn.toggle-view {
+  background: rgba(56, 189, 248, 0.2) !important;
+  border-color: rgba(56, 189, 248, 0.5) !important;
+  color: #38bdf8 !important;
+}
+
+.llm4web-trans-btn.toggle-view:hover {
+  background: rgba(56, 189, 248, 0.35) !important;
+}
+
+.llm4web-trans-btn.stop {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  color: #f87171 !important;
+}
+
+.llm4web-trans-btn.stop:hover {
+  background: rgba(239, 68, 68, 0.3) !important;
+}
+
+.llm4web-trans-btn.close {
+  padding: 0 !important;
+  width: 20px !important;
+  height: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 50% !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+}
+
+.llm4web-trans-status {
+  font-size: 11.5px !important;
+  color: #94a3b8 !important;
+  margin-bottom: 8px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.llm4web-trans-progress-track {
+  width: 100% !important;
+  height: 5px !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 3px !important;
+  overflow: hidden !important;
+}
+
+.llm4web-trans-progress-fill {
+  height: 100% !important;
+  background: linear-gradient(90deg, #38bdf8 0%, #818cf8 100%) !important;
+  border-radius: 3px !important;
+  transition: width 0.3s ease !important;
+}
+
+/* 翻译后节点的平滑渐变动效 */
+.llm4web-translated-node {
+  transition: opacity 0.3s ease !important;
+}
+
+.llm4web-trans-bar .hidden {
+  display: none !important;
 }

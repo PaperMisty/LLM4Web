@@ -10,16 +10,48 @@ let pendingExplainText = null; // iframe 尚未加载完成时暂存的划词文
 let pendingExplainMode = "medium"; // iframe 尚未加载完成时暂存的选定模式
 let pendingExplainPrefix = ""; // 暂存的划词前置上下文
 let pendingExplainSuffix = ""; // 暂存的划词后置上下文
+let pendingExplainPromptName = ""; // 暂存的操作名称
+let pendingExplainPromptTemplate = ""; // 暂存的提示词模板
 
-// 读取呈现模式，inPage 模式下注入悬浮面板
-chrome.storage.local.get(["displayMode"], (res) => {
+// 默认提示词预设（解耦兜底）
+const DEFAULT_PROMPTS = [
+  {
+    id: "easy",
+    name: "简易",
+    icon: "⚡",
+    systemPrompt: "请帮我简明扼要地解释以下内容。{context}（请严格限制在 50 个 Token 左右，回答必须极其简短、直奔主题，无需任何客套与前缀说明）：\n\n\"{text}\"",
+    isDefault: true
+  },
+  {
+    id: "medium",
+    name: "中等",
+    icon: "🧠",
+    systemPrompt: "请帮我解释以下内容。{context}（请控制在 200 个 Token 左右，结合上述上下文环境简明说明其核心要义即可，直击要点）：\n\n\"{text}\"",
+    isDefault: true
+  },
+  {
+    id: "complex",
+    name: "复杂",
+    icon: "🎓",
+    systemPrompt: "请帮我深入、详细地解释以下内容。{context} (请不受任何字数 and 长度限制，结合上述上下文环境提供尽可能详尽、专业的剖析、背景脉络与学术拓展讲解)：\n\n\"{text}\"",
+    isDefault: true
+  }
+];
+
+let activePrompts = [...DEFAULT_PROMPTS];
+
+// 读取配置与提示词列表
+chrome.storage.local.get(["displayMode", "customPrompts"], (res) => {
   displayMode = res.displayMode || "inPage";
+  if (res.customPrompts && Array.isArray(res.customPrompts) && res.customPrompts.length > 0) {
+    activePrompts = res.customPrompts;
+  }
   if (displayMode === "inPage") {
     ensureOverlay();
   }
 });
 
-// 监听呈现模式切换与尺寸变化，动态注入/移除或缩放悬浮面板
+// 监听呈现模式切换与提示词变更
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === "local") {
     if (changes.displayMode) {
@@ -29,6 +61,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
       } else {
         removeOverlay();
       }
+    }
+    if (changes.customPrompts) {
+      activePrompts = changes.customPrompts.newValue || [...DEFAULT_PROMPTS];
     }
     if (changes.overlayWidth && overlay) {
       overlay.style.width = (parseInt(changes.overlayWidth.newValue) || 560) + "px";
@@ -87,8 +122,12 @@ function ensureOverlay() {
       const mode = pendingExplainMode;
       const prefix = pendingExplainPrefix;
       const suffix = pendingExplainSuffix;
+      const pName = pendingExplainPromptName;
+      const pTpl = pendingExplainPromptTemplate;
       pendingExplainText = null;
-      sendExplainToOverlay(text, mode, prefix, suffix);
+      pendingExplainPromptName = "";
+      pendingExplainPromptTemplate = "";
+      sendExplainToOverlay(text, mode, prefix, suffix, pName, pTpl);
     }
   });
 
@@ -117,12 +156,20 @@ function isOverlayVisible() {
   return !!overlay && overlay.classList.contains("llm4web-overlay-visible");
 }
 
-// 把划词文本、解释模式和前后文直接交给 iframe 内的面板
-function sendExplainToOverlay(text, mode = "medium", prefix = "", suffix = "") {
+// 把划词文本、解释模式和前后文及自定义Prompt直接交给 iframe 内的面板
+function sendExplainToOverlay(text, mode = "medium", prefix = "", suffix = "", promptName = "", promptTemplate = "") {
   if (!overlayIframe || !overlayIframe.contentWindow) return;
   try {
     overlayIframe.contentWindow.postMessage(
-      { type: "LLM4WEB_EXPLAIN", text: text, mode: mode, prefix: prefix, suffix: suffix },
+      {
+        type: "LLM4WEB_EXPLAIN",
+        text: text,
+        mode: mode,
+        prefix: prefix,
+        suffix: suffix,
+        promptName: promptName,
+        promptTemplate: promptTemplate
+      },
       "*"
     );
   } catch (e) {
@@ -227,56 +274,48 @@ document.addEventListener("mousedown", (e) => {
   }
 });
 
-// 创建悬浮 AI 按钮栏（并列三个：简易/中等/复杂）
+// 创建悬浮 AI 按钮栏（动态从 activePrompts 渲染解耦的按钮）
 function createFloatingBtn(x, y, text, prefix = "", suffix = "") {
-  // 先清理可能存在的旧按钮
   removeFloatingBtn();
 
   floatingBtn = document.createElement("div");
   floatingBtn.className = "llm4web-floating-bar";
   
-  // 创建并列的三个按钮：简易 (⚡)、中等 (🧠)、复杂 (🎓)
-  const btnEasy = document.createElement("button");
-  btnEasy.className = "llm4web-bar-btn easy";
-  btnEasy.title = "简易模式 (约50 tokens限额解释)";
-  btnEasy.innerHTML = `<span>⚡</span><span>简易</span>`;
+  const prompts = (activePrompts && activePrompts.length > 0) ? activePrompts : DEFAULT_PROMPTS;
 
-  const btnMedium = document.createElement("button");
-  btnMedium.className = "llm4web-bar-btn medium";
-  btnMedium.title = "中等模式 (约200 tokens普通解释)";
-  btnMedium.innerHTML = `<span>🧠</span><span>中等</span>`;
+  prompts.forEach((p) => {
+    const btn = document.createElement("button");
+    btn.className = `llm4web-bar-btn ${p.id || 'custom'}`;
+    btn.title = `${p.name} - ${p.systemPrompt ? p.systemPrompt.slice(0, 50) + '...' : ''}`;
+    btn.innerHTML = `<span>${p.icon || '💡'}</span><span>${p.name || '解释'}</span>`;
 
-  const btnComplex = document.createElement("button");
-  btnComplex.className = "llm4web-bar-btn complex";
-  btnComplex.title = "复杂模式 (不设限制深度解析)";
-  btnComplex.innerHTML = `<span>🎓</span><span>复杂</span>`;
-
-  const configs = [
-    { el: btnEasy, mode: "easy" },
-    { el: btnMedium, mode: "medium" },
-    { el: btnComplex, mode: "complex" }
-  ];
-
-  configs.forEach(({ el, mode }) => {
-    el.addEventListener("click", (e) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
+
+      const mode = p.id || "medium";
+      const promptName = p.name || "";
+      const promptTemplate = p.systemPrompt || "";
 
       if (displayMode === "inPage") {
         showOverlay();
         if (overlayIframe && overlayIframe.contentWindow) {
-          sendExplainToOverlay(text, mode, prefix, suffix);
+          sendExplainToOverlay(text, mode, prefix, suffix, promptName, promptTemplate);
         } else {
           pendingExplainText = text;
           pendingExplainMode = mode;
           pendingExplainPrefix = prefix;
           pendingExplainSuffix = suffix;
+          pendingExplainPromptName = promptName;
+          pendingExplainPromptTemplate = promptTemplate;
         }
       } else {
         chrome.runtime.sendMessage({
           type: "EXPLAIN_TEXT",
           text: text,
           mode: mode,
+          promptName: promptName,
+          promptTemplate: promptTemplate,
           contextPrefix: prefix,
           contextSuffix: suffix
         });
@@ -290,7 +329,7 @@ function createFloatingBtn(x, y, text, prefix = "", suffix = "") {
       }, 150);
     });
 
-    floatingBtn.appendChild(el);
+    floatingBtn.appendChild(btn);
   });
 
   // 精准定位在鼠标落点右下角
@@ -305,6 +344,241 @@ function removeFloatingBtn() {
   if (floatingBtn) {
     floatingBtn.remove();
     floatingBtn = null;
+  }
+}
+
+// ================= 网页全篇智能翻译 (带上下文与原位替换) =================
+let isPageTranslating = false;
+let abortPageTranslation = false;
+let isShowingOriginal = false;
+let transControlBar = null;
+let translatedElementsMap = new Map(); // id -> { el, originalHtml, translatedText }
+
+// 监听扩展发送的网页翻译指令
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.type === "START_PAGE_TRANSLATION") {
+    startPageTranslation();
+    sendResponse({ success: true });
+  }
+});
+
+// 筛选页面中可翻译的文本块
+function collectTranslatableElements() {
+  const candidateSelectors = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "dt", "dd", "figcaption"];
+  const nodes = document.querySelectorAll(candidateSelectors.join(","));
+  const list = [];
+  let currentId = 1;
+
+  nodes.forEach((node) => {
+    // 排除插件自身控件与代码、交互元素
+    if (node.closest(".llm4web-overlay, .llm4web-floating-bar, .llm4web-trans-bar, pre, code, script, style, noscript, svg, button, input, textarea, select, option, iframe")) {
+      return;
+    }
+
+    // 排除含有代码块子元素的节点，避免破坏代码
+    if (node.querySelector("code, pre")) {
+      return;
+    }
+
+    // 检查元素是否可见
+    const isVisible = (node.offsetParent !== null || node.getClientRects().length > 0) && window.getComputedStyle(node).visibility !== "hidden";
+    if (!isVisible) return;
+
+    const rawText = node.innerText ? node.innerText.trim() : "";
+    // 排除过短、纯数字或无语言字符
+    if (rawText.length < 2 || !/[\p{L}\p{N}]/u.test(rawText)) {
+      return;
+    }
+
+    list.push({
+      id: currentId++,
+      el: node,
+      text: rawText
+    });
+  });
+
+  return list;
+}
+
+// 创建或显示翻译控制浮条
+function ensureTransControlBar() {
+  if (transControlBar) return transControlBar;
+
+  transControlBar = document.createElement("div");
+  transControlBar.className = "llm4web-trans-bar";
+
+  transControlBar.innerHTML = `
+    <div class="llm4web-trans-header">
+      <div class="llm4web-trans-title-area">
+        <span class="llm4web-trans-icon">🌐</span>
+        <span class="llm4web-trans-title">网页全篇翻译</span>
+      </div>
+      <div class="llm4web-trans-actions">
+        <button type="button" class="llm4web-trans-btn toggle-view hidden" title="在原文与译文之间切换">👁️ 切换原文</button>
+        <button type="button" class="llm4web-trans-btn stop" title="中止后续翻译">⏹️ 停止</button>
+        <button type="button" class="llm4web-trans-btn close" title="关闭悬浮条">&times;</button>
+      </div>
+    </div>
+    <div class="llm4web-trans-status">正在分析网页正文段落...</div>
+    <div class="llm4web-trans-progress-track">
+      <div class="llm4web-trans-progress-fill" style="width: 0%;"></div>
+    </div>
+  `;
+
+  // 绑定事件
+  const btnToggle = transControlBar.querySelector(".toggle-view");
+  const btnStop = transControlBar.querySelector(".stop");
+  const btnClose = transControlBar.querySelector(".close");
+
+  btnToggle.addEventListener("click", () => {
+    isShowingOriginal = !isShowingOriginal;
+    if (isShowingOriginal) {
+      btnToggle.textContent = "🇨🇳 显示译文";
+      translatedElementsMap.forEach(({ el, originalHtml }) => {
+        el.innerHTML = originalHtml;
+      });
+    } else {
+      btnToggle.textContent = "👁️ 切换原文";
+      translatedElementsMap.forEach(({ el, translatedText }) => {
+        el.innerText = translatedText;
+      });
+    }
+  });
+
+  btnStop.addEventListener("click", () => {
+    abortPageTranslation = true;
+    btnStop.disabled = true;
+    btnStop.textContent = "正在停止...";
+  });
+
+  btnClose.addEventListener("click", () => {
+    transControlBar.remove();
+    transControlBar = null;
+  });
+
+  document.body.appendChild(transControlBar);
+  return transControlBar;
+}
+
+// 启动全篇翻译
+async function startPageTranslation() {
+  if (isPageTranslating) {
+    alert("当前网页正在翻译中，请稍候...");
+    return;
+  }
+
+  const elements = collectTranslatableElements();
+  if (elements.length === 0) {
+    alert("未在当前网页找到可翻译的正文段落。");
+    return;
+  }
+
+  const bar = ensureTransControlBar();
+  const statusEl = bar.querySelector(".llm4web-trans-status");
+  const progressFill = bar.querySelector(".llm4web-trans-progress-fill");
+  const btnToggle = bar.querySelector(".toggle-view");
+  const btnStop = bar.querySelector(".stop");
+
+  isPageTranslating = true;
+  abortPageTranslation = false;
+  isShowingOriginal = false;
+  btnToggle.classList.add("hidden");
+  btnStop.classList.remove("hidden");
+  btnStop.disabled = false;
+  btnStop.textContent = "⏹️ 停止";
+
+  const total = elements.length;
+  statusEl.textContent = `共发现 ${total} 个段落，正在结合上下文分批翻译...`;
+  progressFill.style.width = "0%";
+
+  // 备份原内容
+  elements.forEach(({ id, el }) => {
+    if (!el.dataset.llm4webOriginal) {
+      el.dataset.llm4webOriginal = el.innerHTML;
+    }
+  });
+
+  // 分批打包（每批最多 12 个段落，或总字符数不超过 2200）
+  const batches = [];
+  let currentBatch = [];
+  let currentLength = 0;
+
+  for (const item of elements) {
+    if (currentBatch.length >= 12 || (currentLength + item.text.length > 2200 && currentBatch.length > 0)) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentLength = 0;
+    }
+    currentBatch.push(item);
+    currentLength += item.text.length;
+  }
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
+  }
+
+  let completedCount = 0;
+
+  for (let i = 0; i < batches.length; i++) {
+    if (abortPageTranslation) {
+      statusEl.textContent = `⚠️ 用户已停止翻译 (已完成 ${completedCount}/${total} 段)`;
+      break;
+    }
+
+    const batch = batches[i];
+    statusEl.textContent = `正在翻译第 ${i + 1}/${batches.length} 批 (已完成 ${completedCount}/${total} 段)...`;
+
+    try {
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          type: "TRANSLATE_BATCH",
+          items: batch.map(b => ({ id: b.id, text: b.text }))
+        }, (res) => {
+          resolve(res);
+        });
+      });
+
+      if (!response || !response.success) {
+        statusEl.innerHTML = `<span style="color: #ef4444;">❌ 翻译中断: ${response ? response.error : '请求异常，请检查配置'}</span>`;
+        break;
+      }
+
+      // 成功返回，原位替换段落
+      const results = response.results || [];
+      const resultMap = new Map(results.map(r => [r.id, r.translatedText]));
+
+      batch.forEach(({ id, el }) => {
+        const trans = resultMap.get(id);
+        if (trans) {
+          el.innerText = trans;
+          el.classList.add("llm4web-translated-node");
+          translatedElementsMap.set(id, {
+            el: el,
+            originalHtml: el.dataset.llm4webOriginal,
+            translatedText: trans
+          });
+        }
+        completedCount++;
+      });
+
+      const pct = Math.round((completedCount / total) * 100);
+      progressFill.style.width = `${pct}%`;
+    } catch (e) {
+      console.error("批次翻译异常:", e);
+      statusEl.innerHTML = `<span style="color: #ef4444;">❌ 翻译遇到网络异常</span>`;
+      break;
+    }
+  }
+
+  isPageTranslating = false;
+  btnStop.classList.add("hidden");
+  if (translatedElementsMap.size > 0) {
+    btnToggle.classList.remove("hidden");
+    btnToggle.textContent = "👁️ 切换原文";
+  }
+
+  if (!abortPageTranslation && completedCount >= total) {
+    statusEl.innerHTML = `✅ 网页全篇翻译完成！共翻译 ${completedCount} 个段落。`;
+    progressFill.style.width = "100%";
   }
 }
 
