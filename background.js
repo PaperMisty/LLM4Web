@@ -183,26 +183,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
 
-    chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model"], async (cfg) => {
-      const { provider, apiKey, baseUrl, model } = cfg;
-      if (!apiKey || !baseUrl || !model) {
-        sendResponse({ success: false, error: "请先在 LLM4Web 设置中配置 API Key 与模型！" });
+    chrome.storage.local.get([
+      "channels", "translateChannelId", "translateModel",
+      "provider", "currentChannelId", "apiKey", "baseUrl", "model"
+    ], async (cfg) => {
+      let activeApiKey = "";
+      let activeBaseUrl = "";
+      let activeModel = "";
+
+      const channels = cfg.channels || [];
+      const translateChannel = channels.find(c => c.id === cfg.translateChannelId);
+
+      if (translateChannel) {
+        activeApiKey = translateChannel.apiKey || cfg.apiKey || "";
+        activeBaseUrl = translateChannel.baseUrl || cfg.baseUrl || "";
+        activeModel = cfg.translateModel || translateChannel.model || translateChannel.defaultModel || cfg.model || "";
+      } else {
+        // 兜底回退到主渠道
+        activeApiKey = cfg.apiKey || "";
+        activeBaseUrl = cfg.baseUrl || "";
+        activeModel = cfg.translateModel || cfg.model || "";
+      }
+
+      if (!activeApiKey || !activeBaseUrl || !activeModel) {
+        sendResponse({ success: false, error: "请先在 LLM4Web 设置中配置网页翻译的 API Key 与模型！" });
         return;
       }
 
       // 组织编号列表，保留完整段落上下文
       const numberedText = items.map(it => `[${it.id}] ${it.text}`).join("\n\n");
-      const systemPrompt = `你是一个专业的网页翻译引擎。你的任务是将用户提供的网页段落翻译成简体中文。
-请结合全部段落的完整上下文进行连贯、通顺、地道的专业翻译，避免断章取义。
+      const systemPrompt = `你是一个顶级的专业网页翻译引擎。你的任务是将用户提供的按序号编排的网页段落翻译成简体中文。
+请结合全部段落的完整上下文语境进行自然、通顺、地道的专业翻译，避免断章取义。
 
-【输出格式极度严格要求】：
+【关键格式与代码保护规则】：
 1. 每一段翻译结果必须严格按如下格式输出，务必保留对应的原序号标号：
 [序号] 翻译后的中文文本
 2. 严禁合并、遗漏或跳过任何一个序号！
-3. 请直接输出翻译结果，绝对不要输出任何问候、开场白、总结或额外解释说明！`;
+3. 【代码占位符绝对保护】：文本中形如 [__CODE_0__]、[__CODE_1__] 的占位符代表行内代码，必须在译文相应位置原样完整保留该占位符及其编号，严禁翻译、修改、删除或拼写篡改任何占位符！
+4. 请直接输出翻译结果，绝对不要输出任何问候、开场白、总结或额外解释说明！`;
 
       const requestBody = {
-        model: model,
+        model: activeModel,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: numberedText }

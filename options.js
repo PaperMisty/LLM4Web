@@ -28,12 +28,60 @@ const PRESETS = {
     defaultModel: "llama3",
     models: [
       "gpt-4o",
+      "gpt-4o-mini",
       "gpt-4-turbo",
       "gpt-3.5-turbo",
       "meta-llama/Llama-3-70b-instruct"
     ]
   }
 };
+
+// 默认预设渠道列表
+const DEFAULT_CHANNELS = [
+  {
+    id: "siliconflow",
+    name: "硅基流动 (SiliconFlow)",
+    baseUrl: "https://api.siliconflow.cn/v1",
+    defaultModel: "deepseek-ai/DeepSeek-R1",
+    models: [
+      "deepseek-ai/DeepSeek-R1",
+      "deepseek-ai/DeepSeek-V3",
+      "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+      "deepseek-ai/DeepSeek-R1-Distill-Qwen-8B",
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+      "Qwen/Qwen2.5-72B-Instruct",
+      "Qwen/Qwen2.5-Coder-32B-Instruct"
+    ],
+    isPreset: true
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek 官方",
+    baseUrl: "https://api.deepseek.com",
+    defaultModel: "deepseek-reasoner",
+    models: [
+      "deepseek-reasoner",
+      "deepseek-chat",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash"
+    ],
+    isPreset: true
+  },
+  {
+    id: "custom",
+    name: "自定义 (Custom OpenAI-compatible)",
+    baseUrl: "http://localhost:11434/v1",
+    defaultModel: "llama3",
+    models: [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-4-turbo",
+      "gpt-3.5-turbo",
+      "meta-llama/Llama-3-70b-instruct"
+    ],
+    isPreset: true
+  }
+];
 
 // 预设默认划词提示词
 const DEFAULT_PROMPTS = [
@@ -55,26 +103,20 @@ const DEFAULT_PROMPTS = [
     id: "complex",
     name: "复杂",
     icon: "🎓",
-    systemPrompt: "请帮我深入、详细地解释以下内容。{context} (请不受任何字数 and 长度限制，结合上述上下文环境提供尽可能详尽、专业的剖析、背景脉络与学术拓展讲解)：\n\n\"{text}\"",
+    systemPrompt: "请帮我深入、详细地解释以下内容。{context} (请不受任何字数与长度限制，结合上述上下文环境提供尽可能详尽、专业的剖析、背景脉络与学术拓展讲解)：\n\n\"{text}\"",
     isDefault: true
   }
 ];
 
-let envConfig = null; // 用于缓存解析出来的 .env 配置
+let envConfig = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
+  // 1. 获取所有 DOM 元素
   const displayModeSelect = document.getElementById("display-mode");
   const closeStrategySelect = document.getElementById("close-strategy");
-  const themeSelectSelect = document.getElementById("theme-select");
-  const providerSelect = document.getElementById("provider");
-  const baseUrlInput = document.getElementById("base-url");
-  const apiKeyInput = document.getElementById("api-key");
-  const modelSelect = document.getElementById("model-select");
-  const modelCustom = document.getElementById("model-custom");
-  const togglePasswordBtn = document.getElementById("toggle-password");
-  const settingsForm = document.getElementById("settings-form");
-  const envBanner = document.getElementById("env-banner");
-  const btnImportEnv = document.getElementById("btn-import-env");
+  const closeStrategyGroup = document.getElementById("close-strategy-group");
+  const closeStrategyHint = document.getElementById("close-strategy-hint");
+  const themeSelect = document.getElementById("theme-select");
 
   const windowWidthInput = document.getElementById("window-width");
   const windowHeightInput = document.getElementById("window-height");
@@ -82,9 +124,37 @@ document.addEventListener("DOMContentLoaded", async () => {
   const windowHeightRange = document.getElementById("window-height-range");
   const windowSizeGroup = document.getElementById("window-size-group");
   const windowSizeHint = document.getElementById("window-size-hint");
-  const modelSearchInput = document.getElementById("model-search");
 
-  // 提示词管理相关 DOM 元素
+  const providerSelect = document.getElementById("provider");
+  const baseUrlInput = document.getElementById("base-url");
+  const apiKeyInput = document.getElementById("api-key");
+  const togglePasswordBtn = document.getElementById("toggle-password");
+  const modelSearchInput = document.getElementById("model-search");
+  const modelSelect = document.getElementById("model-select");
+  const modelCustom = document.getElementById("model-custom");
+  const btnFetchModels = document.getElementById("btn-fetch-models");
+  const btnTestModel = document.getElementById("btn-test-model");
+
+  const btnAddChannel = document.getElementById("btn-add-channel");
+  const btnDeleteChannel = document.getElementById("btn-delete-channel");
+  const channelModal = document.getElementById("channel-modal");
+  const channelForm = document.getElementById("channel-form");
+  const btnChannelModalClose = document.getElementById("btn-channel-modal-close");
+  const btnChannelModalCancel = document.getElementById("btn-channel-modal-cancel");
+  const newChannelNameInput = document.getElementById("new-channel-name");
+  const newChannelUrlInput = document.getElementById("new-channel-url");
+  const newChannelKeyInput = document.getElementById("new-channel-key");
+  const newChannelModelInput = document.getElementById("new-channel-model");
+
+  // 右栏：翻译独立路由 DOM
+  const translateChannelSelect = document.getElementById("translate-channel-select");
+  const translateModelSelect = document.getElementById("translate-model-select");
+  const translateModelCustom = document.getElementById("translate-model-custom");
+  const btnTestTranslate = document.getElementById("btn-test-translate");
+  const translateBatchTokensInput = document.getElementById("translate-batch-tokens");
+  const translateBatchTokensRange = document.getElementById("translate-batch-tokens-range");
+
+  // 提示词相关 DOM
   const promptsListEl = document.getElementById("prompts-list");
   const btnAddPrompt = document.getElementById("btn-add-prompt");
   const btnResetPrompts = document.getElementById("btn-reset-prompts");
@@ -98,6 +168,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   const btnModalClose = document.getElementById("btn-modal-close");
   const btnModalCancel = document.getElementById("btn-modal-cancel");
 
+  const envBanner = document.getElementById("env-banner");
+  const btnImportEnv = document.getElementById("btn-import-env");
+  const settingsForm = document.getElementById("settings-form");
+  const btnSave = document.getElementById("btn-save");
+
+  // 2. 内存状态
+  let channels = [];
+  let currentChannelId = "siliconflow";
+  let translateChannelId = "siliconflow";
+  let translateModelVal = "deepseek-ai/DeepSeek-V3";
   let customPrompts = [];
 
   let cachedPopupWidth = 380;
@@ -106,35 +186,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   let cachedOverlayHeight = 640;
   let currentProviderModels = [];
 
-  // 1. 初始化密码显隐切换
-  togglePasswordBtn.addEventListener("click", () => {
-    const type = apiKeyInput.type === "password" ? "text" : "password";
-    apiKeyInput.type = type;
-    const svg = togglePasswordBtn.querySelector("svg");
-    if (type === "text") {
-      svg.innerHTML = `
-        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-        <line x1="1" y1="1" x2="23" y2="23"></line>
-      `;
-    } else {
-      svg.innerHTML = `
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-        <circle cx="12" cy="12" r="3"></circle>
-      `;
-    }
-  });
+  // ====================== A. 密码显隐小眼睛切换 ======================
+  if (togglePasswordBtn && apiKeyInput) {
+    togglePasswordBtn.addEventListener("click", () => {
+      const isPassword = apiKeyInput.type === "password";
+      apiKeyInput.type = isPassword ? "text" : "password";
+      togglePasswordBtn.innerHTML = isPassword
+        ? `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>`
+        : `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>`;
+    });
+  }
 
-  // 1.5 呈现模式联动：页面内悬浮面板模式不依赖窗口焦点，禁用"关闭方式"设置
-  const closeStrategyGroup = document.getElementById("close-strategy-group");
-  const closeStrategyHint = document.getElementById("close-strategy-hint");
-  const syncCloseStrategyState = () => {
-    const isInPage = displayModeSelect.value === "inPage";
-    closeStrategySelect.disabled = isInPage;
-    closeStrategyGroup.classList.toggle("disabled-option", isInPage);
-    closeStrategyHint.classList.toggle("hidden", !isInPage);
-  };
-
-  // 呈现模式联动尺寸
+  // ====================== B. 尺寸滑块与输入数值双向联动 ======================
   const syncWindowSizeState = (prevMode, newMode) => {
     if (prevMode === "popup") {
       cachedPopupWidth = parseInt(windowWidthInput.value) || 380;
@@ -150,31 +219,30 @@ document.addEventListener("DOMContentLoaded", async () => {
       windowWidthRange.disabled = true;
       windowHeightRange.disabled = true;
       windowSizeGroup.classList.add("disabled-option");
-      windowSizeHint.innerText = "侧边栏模式由浏览器控制尺寸，无需设置大小。";
+      windowSizeHint.innerText = "侧边栏模式由浏览器自身控制侧边宽度，无需设置尺寸。";
     } else {
       windowWidthInput.disabled = false;
       windowHeightInput.disabled = false;
       windowWidthRange.disabled = false;
       windowHeightRange.disabled = false;
       windowSizeGroup.classList.remove("disabled-option");
-      
+
       if (newMode === "popup") {
         windowWidthInput.value = cachedPopupWidth;
         windowHeightInput.value = cachedPopupHeight;
         windowWidthRange.value = cachedPopupWidth;
         windowHeightRange.value = cachedPopupHeight;
-        windowSizeHint.innerText = "设置悬浮小窗口的默认宽度与高度。";
+        windowSizeHint.innerText = "设置独立悬浮小窗口的初始宽度与高度。";
       } else if (newMode === "inPage") {
         windowWidthInput.value = cachedOverlayWidth;
         windowHeightInput.value = cachedOverlayHeight;
         windowWidthRange.value = cachedOverlayWidth;
         windowHeightRange.value = cachedOverlayHeight;
-        windowSizeHint.innerText = "设置页面内悬浮面板的默认宽度与高度。";
+        windowSizeHint.innerText = "设置网页内浮动遮罩面板的初始宽度与高度。";
       }
     }
   };
 
-  // 绑定滑块与输入框的联动事件
   windowWidthRange.addEventListener("input", (e) => {
     windowWidthInput.value = e.target.value;
   });
@@ -194,7 +262,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  let lastDisplayMode = displayModeSelect.value;
+  const syncCloseStrategyState = () => {
+    const isInPage = displayModeSelect.value === "inPage";
+    closeStrategySelect.disabled = isInPage;
+    closeStrategyGroup.classList.toggle("disabled-option", isInPage);
+    closeStrategyHint.classList.toggle("hidden", !isInPage);
+  };
+
+  let lastDisplayMode = "popup";
   displayModeSelect.addEventListener("change", (e) => {
     const newMode = e.target.value;
     syncWindowSizeState(lastDisplayMode, newMode);
@@ -202,15 +277,85 @@ document.addEventListener("DOMContentLoaded", async () => {
     syncCloseStrategyState();
   });
 
-  // 2. 动态更新模型推荐和默认 URL
+  // 主题实时切换
+  themeSelect.addEventListener("change", (e) => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+  });
+
+  // 翻译单批次 token 上限双向联动
+  translateBatchTokensInput.addEventListener("input", () => {
+    translateBatchTokensRange.value = translateBatchTokensInput.value;
+  });
+  translateBatchTokensRange.addEventListener("input", () => {
+    translateBatchTokensInput.value = translateBatchTokensRange.value;
+  });
+
+  // ====================== C. 渠道管理与模型联动 ======================
+  function saveCurrentFormToChannel(channelId) {
+    const ch = channels.find(c => c.id === channelId);
+    if (ch) {
+      ch.baseUrl = baseUrlInput.value.trim();
+      ch.apiKey = apiKeyInput.value.trim();
+      const currentSelectedModel = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
+      ch.model = currentSelectedModel;
+      if (!ch.models) ch.models = [];
+      if (currentSelectedModel && !ch.models.includes(currentSelectedModel)) {
+        ch.models.push(currentSelectedModel);
+      }
+    }
+  }
+
+  function loadChannelToForm(channel) {
+    if (!channel) return;
+    baseUrlInput.value = channel.baseUrl || (PRESETS[channel.id]?.defaultUrl || "");
+    apiKeyInput.value = channel.apiKey || "";
+    const modelToLoad = channel.model || channel.defaultModel || (PRESETS[channel.id]?.defaultModel || "");
+    updateModelSuggestions(channel.id, false, modelToLoad);
+
+    if (channel.isPreset) {
+      btnDeleteChannel.classList.add("hidden");
+    } else {
+      btnDeleteChannel.classList.remove("hidden");
+    }
+  }
+
+  const renderChannelsUI = () => {
+    providerSelect.innerHTML = "";
+    translateChannelSelect.innerHTML = "";
+
+    channels.forEach(ch => {
+      const opt1 = document.createElement("option");
+      opt1.value = ch.id;
+      opt1.textContent = ch.name;
+      providerSelect.appendChild(opt1);
+
+      const opt2 = document.createElement("option");
+      opt2.value = ch.id;
+      opt2.textContent = ch.name;
+      translateChannelSelect.appendChild(opt2);
+    });
+
+    providerSelect.value = currentChannelId;
+    translateChannelSelect.value = translateChannelId;
+
+    const currentChannel = channels.find(c => c.id === currentChannelId);
+    if (currentChannel && !currentChannel.isPreset) {
+      btnDeleteChannel.classList.remove("hidden");
+    } else {
+      btnDeleteChannel.classList.add("hidden");
+    }
+
+    updateTranslateModelSuggestions();
+  };
+
   const renderModelOptions = (filterText = "") => {
     const prevValue = modelSelect.value;
     const prevCustomValue = modelCustom.value;
-    
+
     modelSelect.innerHTML = "";
     const query = filterText.toLowerCase().trim();
     const filtered = currentProviderModels.filter(m => m.toLowerCase().includes(query));
-    
+
     filtered.forEach(modelName => {
       const option = document.createElement("option");
       option.value = modelName;
@@ -220,7 +365,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const customOpt = document.createElement("option");
     customOpt.value = "__custom__";
-    customOpt.textContent = "⚙️ 自定义输入...";
+    customOpt.textContent = "⚙️ 自定义输入模型...";
     modelSelect.appendChild(customOpt);
 
     if (prevValue === "__custom__") {
@@ -233,7 +378,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       modelSelect.value = "__custom__";
     }
-    
+
     modelSelect.dispatchEvent(new Event("change"));
   };
 
@@ -241,82 +386,44 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderModelOptions(e.target.value);
   });
 
-  modelSearchInput.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (modelSelect.options.length > 0) {
-        let nextIndex = modelSelect.selectedIndex + 1;
-        if (nextIndex >= modelSelect.options.length) nextIndex = 0;
-        modelSelect.selectedIndex = nextIndex;
-        modelSelect.dispatchEvent(new Event("change"));
-      }
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (modelSelect.options.length > 0) {
-        let prevIndex = modelSelect.selectedIndex - 1;
-        if (prevIndex < 0) prevIndex = modelSelect.options.length - 1;
-        modelSelect.selectedIndex = prevIndex;
-        modelSelect.dispatchEvent(new Event("change"));
-      }
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      modelSearchInput.blur();
-      showToast(`已选定模型: ${modelSelect.value === "__custom__" ? "自定义输入" : modelSelect.value}`);
-    }
-  });
+  const updateModelSuggestions = (providerId, changeUrl = true, modelToSelect = null) => {
+    const channel = channels.find(c => c.id === providerId);
+    const preset = PRESETS[providerId];
+    let modelsList = channel?.models || preset?.models || [channel?.defaultModel || "default"];
 
-  const updateModelSuggestions = (provider, changeUrl = true, modelToSelect = null) => {
-    const preset = PRESETS[provider];
-    if (!preset) return;
+    currentProviderModels = [...modelsList];
+    modelSearchInput.value = "";
+    renderModelOptions("");
 
-    chrome.storage.local.get([`models_${provider}`], (result) => {
-      let modelsList = result[`models_${provider}`];
-      if (!modelsList || !Array.isArray(modelsList)) {
-        modelsList = preset.models;
-      }
-      
-      currentProviderModels = [...modelsList];
-      modelSearchInput.value = "";
-      renderModelOptions("");
-
-      if (modelToSelect) {
-        const exists = currentProviderModels.includes(modelToSelect);
-        if (exists) {
-          modelSelect.value = modelToSelect;
-          modelCustom.classList.add("hidden");
-          modelCustom.required = false;
-          modelCustom.value = "";
-        } else {
-          modelSelect.value = "__custom__";
-          modelCustom.classList.remove("hidden");
-          modelCustom.required = true;
-          modelCustom.value = modelToSelect;
-        }
-      } else {
-        modelSelect.value = preset.defaultModel;
+    if (modelToSelect) {
+      const exists = currentProviderModels.includes(modelToSelect);
+      if (exists) {
+        modelSelect.value = modelToSelect;
         modelCustom.classList.add("hidden");
         modelCustom.required = false;
         modelCustom.value = "";
+      } else {
+        modelSelect.value = "__custom__";
+        modelCustom.classList.remove("hidden");
+        modelCustom.required = true;
+        modelCustom.value = modelToSelect;
       }
-      modelSelect.dispatchEvent(new Event("change"));
-    });
+    } else {
+      const def = channel?.defaultModel || preset?.defaultModel || currentProviderModels[0];
+      modelSelect.value = def || "__custom__";
+      modelCustom.classList.add("hidden");
+      modelCustom.required = false;
+      modelCustom.value = "";
+    }
+    modelSelect.dispatchEvent(new Event("change"));
 
-    if (changeUrl) {
-      if (envConfig) {
-        if (provider === "siliconflow" && envConfig.siliconflow_url) {
-          baseUrlInput.value = envConfig.siliconflow_url;
-          return;
-        }
-        if (provider === "deepseek" && envConfig.deepseek_url) {
-          baseUrlInput.value = envConfig.deepseek_url;
-          return;
-        }
-      }
+    if (changeUrl && channel?.baseUrl) {
+      baseUrlInput.value = channel.baseUrl;
+    } else if (changeUrl && preset?.defaultUrl) {
       baseUrlInput.value = preset.defaultUrl;
     }
   };
 
-  // 监听模型 Select 改变
   modelSelect.addEventListener("change", (e) => {
     if (e.target.value === "__custom__") {
       modelCustom.classList.remove("hidden");
@@ -325,272 +432,385 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       modelCustom.classList.add("hidden");
       modelCustom.required = false;
-      modelCustom.value = "";
     }
   });
 
-  // 监听 Provider 改变
   providerSelect.addEventListener("change", (e) => {
-    const provider = e.target.value;
-    updateModelSuggestions(provider, true);
-
-    // 切换 Provider 时，如果内存中有 env 对应的 key，自动填充
-    if (envConfig) {
-      if (provider === "siliconflow" && envConfig.siliconflow_dsv4) {
-        apiKeyInput.value = envConfig.siliconflow_dsv4;
-      } else if (provider === "deepseek" && envConfig.deepseek_key) {
-        apiKeyInput.value = envConfig.deepseek_key;
-      } else {
-        apiKeyInput.value = "";
-      }
-    } else {
-      // 从 storage 加载之前保存的该提供商配置
-      chrome.storage.local.get([`key_${provider}`, `url_${provider}`, `model_${provider}`], (result) => {
-        apiKeyInput.value = result[`key_${provider}`] || "";
-        if (result[`url_${provider}`]) {
-          baseUrlInput.value = result[`url_${provider}`];
-        }
-        const savedModel = result[`model_${provider}`] || PRESETS[provider].defaultModel;
-        updateModelSuggestions(provider, false, savedModel);
-      });
-    }
+    saveCurrentFormToChannel(currentChannelId);
+    currentChannelId = e.target.value;
+    const ch = channels.find(c => c.id === currentChannelId);
+    loadChannelToForm(ch);
   });
 
-  // 3. 从 storage 加载已保存配置
-  chrome.storage.local.get([
-    "provider", "apiKey", "baseUrl", "model", "displayMode", "closeStrategy", "theme",
-    "popupWidth", "popupHeight", "overlayWidth", "overlayHeight"
-  ], (result) => {
-    cachedPopupWidth = result.popupWidth || 380;
-    cachedPopupHeight = result.popupHeight || 680;
-    cachedOverlayWidth = result.overlayWidth || 560;
-    cachedOverlayHeight = result.overlayHeight || 640;
-
-    displayModeSelect.value = result.displayMode || "inPage";
-    closeStrategySelect.value = result.closeStrategy || "manual";
-    syncCloseStrategyState();
-    
-    lastDisplayMode = displayModeSelect.value;
-    if (lastDisplayMode === "sidePanel") {
-      windowWidthInput.disabled = true;
-      windowHeightInput.disabled = true;
-      windowWidthRange.disabled = true;
-      windowHeightRange.disabled = true;
-      windowSizeGroup.classList.add("disabled-option");
-      windowSizeHint.innerText = "侧边栏模式由浏览器控制尺寸，无需设置大小。";
-      windowWidthInput.value = 380;
-      windowHeightInput.value = 680;
-      windowWidthRange.value = 380;
-      windowHeightRange.value = 680;
-    } else {
-      windowWidthInput.disabled = false;
-      windowHeightInput.disabled = false;
-      windowWidthRange.disabled = false;
-      windowHeightRange.disabled = false;
-      windowSizeGroup.classList.remove("disabled-option");
-      if (lastDisplayMode === "popup") {
-        windowWidthInput.value = cachedPopupWidth;
-        windowHeightInput.value = cachedPopupHeight;
-        windowWidthRange.value = cachedPopupWidth;
-        windowHeightRange.value = cachedPopupHeight;
-        windowSizeHint.innerText = "设置悬浮小窗口的默认宽度与高度。";
-      } else {
-        windowWidthInput.value = cachedOverlayWidth;
-        windowHeightInput.value = cachedOverlayHeight;
-        windowWidthRange.value = cachedOverlayWidth;
-        windowHeightRange.value = cachedOverlayHeight;
-        windowSizeHint.innerText = "设置页面内悬浮面板的默认宽度与高度。";
-      }
-    }
-    
-    const currentTheme = result.theme || "warm-amber";
-    themeSelectSelect.value = currentTheme;
-    document.documentElement.setAttribute("data-theme", currentTheme);
-    
-    const savedProvider = result.provider || "siliconflow";
-    providerSelect.value = savedProvider;
-    baseUrlInput.value = result.baseUrl || PRESETS[savedProvider].defaultUrl;
-    apiKeyInput.value = result.apiKey || "";
-
-    const savedModel = result.model || PRESETS[savedProvider].defaultModel;
-    updateModelSuggestions(savedProvider, false, savedModel);
+  // 渠道增删模态框
+  btnAddChannel.addEventListener("click", () => {
+    newChannelNameInput.value = "";
+    newChannelUrlInput.value = "";
+    newChannelKeyInput.value = "";
+    newChannelModelInput.value = "";
+    channelModal.classList.remove("hidden");
+    newChannelNameInput.focus();
   });
 
-  // 3.5 提示词 (Prompts CRUD) 渲染与管理逻辑
-  chrome.storage.local.get(["customPrompts"], (res) => {
-    if (res.customPrompts && Array.isArray(res.customPrompts) && res.customPrompts.length > 0) {
-      customPrompts = res.customPrompts;
-    } else {
-      customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS));
-      chrome.storage.local.set({ customPrompts });
-    }
-    renderPromptsList();
-  });
+  const closeChannelModal = () => {
+    channelModal.classList.add("hidden");
+  };
 
-  function renderPromptsList() {
-    promptsListEl.innerHTML = "";
-    if (customPrompts.length === 0) {
-      promptsListEl.innerHTML = `<div style="text-align:center; padding: 16px; color: var(--text-muted); font-size: 13px;">暂无提示词，请点击上方“新增提示词”或“恢复默认预设”</div>`;
+  btnChannelModalClose.addEventListener("click", closeChannelModal);
+  btnChannelModalCancel.addEventListener("click", closeChannelModal);
+
+  channelForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = newChannelNameInput.value.trim();
+    const url = newChannelUrlInput.value.trim();
+    const key = newChannelKeyInput.value.trim();
+    const model = newChannelModelInput.value.trim();
+
+    if (!name || !url) {
+      showToast("⚠️ 请填写渠道名称与 Base URL");
       return;
     }
 
-    customPrompts.forEach((item) => {
-      const card = document.createElement("div");
-      card.className = "prompt-card";
+    saveCurrentFormToChannel(currentChannelId);
 
-      const main = document.createElement("div");
-      main.className = "prompt-card-main";
+    const newId = "channel_" + Date.now();
+    const newChan = {
+      id: newId,
+      name: name,
+      baseUrl: url,
+      apiKey: key,
+      defaultModel: model || "gpt-4o-mini",
+      models: model ? [model] : ["gpt-4o-mini"],
+      isPreset: false
+    };
 
-      const header = document.createElement("div");
-      header.className = "prompt-card-header";
+    channels.push(newChan);
+    currentChannelId = newId;
+    renderChannelsUI();
+    loadChannelToForm(newChan);
+    closeChannelModal();
+    showToast(`✅ 已新增并切换到渠道: ${name}`);
+  });
 
-      const iconSpan = document.createElement("span");
-      iconSpan.className = "prompt-card-icon";
-      iconSpan.textContent = item.icon || "💡";
+  btnDeleteChannel.addEventListener("click", () => {
+    const ch = channels.find(c => c.id === currentChannelId);
+    if (!ch || ch.isPreset) return;
 
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "prompt-card-name";
-      nameSpan.textContent = item.name || "未命名提示词";
+    if (confirm(`确定要删除自定义渠道「${ch.name}」吗？`)) {
+      channels = channels.filter(c => c.id !== currentChannelId);
+      currentChannelId = "siliconflow";
+      renderChannelsUI();
+      const nextChan = channels.find(c => c.id === currentChannelId);
+      loadChannelToForm(nextChan);
+      showToast("🗑️ 渠道已删除并切回硅基流动渠道");
+    }
+  });
 
-      header.appendChild(iconSpan);
-      header.appendChild(nameSpan);
+  // ====================== D. 翻译专用路由 ======================
+  const updateTranslateModelSuggestions = () => {
+    const channel = channels.find(c => c.id === translateChannelSelect.value);
+    if (!channel) return;
 
-      if (item.isDefault) {
-        const badge = document.createElement("span");
-        badge.className = "prompt-badge-default";
-        badge.textContent = "预设";
-        header.appendChild(badge);
+    translateModelSelect.innerHTML = "";
+    const modelsList = channel.models || PRESETS[channel.id]?.models || [channel.defaultModel || "deepseek-chat"];
+    modelsList.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      translateModelSelect.appendChild(opt);
+    });
+
+    const customOpt = document.createElement("option");
+    customOpt.value = "__custom__";
+    customOpt.textContent = "⚙️ 自定义输入模型...";
+    translateModelSelect.appendChild(customOpt);
+
+    if (translateModelVal && modelsList.includes(translateModelVal)) {
+      translateModelSelect.value = translateModelVal;
+      translateModelCustom.classList.add("hidden");
+    } else if (translateModelVal) {
+      translateModelSelect.value = "__custom__";
+      translateModelCustom.classList.remove("hidden");
+      translateModelCustom.value = translateModelVal;
+    } else {
+      translateModelSelect.value = modelsList[0] || "__custom__";
+      translateModelCustom.classList.add("hidden");
+    }
+  };
+
+  translateChannelSelect.addEventListener("change", (e) => {
+    translateChannelId = e.target.value;
+    updateTranslateModelSuggestions();
+  });
+
+  translateModelSelect.addEventListener("change", (e) => {
+    if (e.target.value === "__custom__") {
+      translateModelCustom.classList.remove("hidden");
+      translateModelCustom.focus();
+    } else {
+      translateModelCustom.classList.add("hidden");
+      translateModelVal = e.target.value;
+    }
+  });
+
+  translateModelCustom.addEventListener("input", (e) => {
+    translateModelVal = e.target.value.trim();
+  });
+
+  // 独立测试翻译连通性
+  btnTestTranslate.addEventListener("click", async () => {
+    const ch = channels.find(c => c.id === translateChannelSelect.value);
+    if (!ch) {
+      showToast("⚠️ 未找到所选翻译渠道");
+      return;
+    }
+
+    const testUrl = (ch.baseUrl || baseUrlInput.value).replace(/\/+$/, "");
+    const testKey = ch.apiKey || (ch.id === currentChannelId ? apiKeyInput.value.trim() : "");
+    const testModel = translateModelSelect.value === "__custom__" ? translateModelCustom.value.trim() : translateModelSelect.value;
+
+    if (!testKey) {
+      showToast("⚠️ 该翻译渠道尚未设置 API Key，请先配置！");
+      return;
+    }
+    if (!testModel) {
+      showToast("⚠️ 请指定翻译测试模型");
+      return;
+    }
+
+    const spinner = btnTestTranslate.querySelector(".spinner-sm");
+    btnTestTranslate.disabled = true;
+    spinner.classList.remove("hidden");
+
+    try {
+      const response = await fetch(`${testUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${testKey}`
+        },
+        body: JSON.stringify({
+          model: testModel,
+          messages: [{ role: "user", content: "Hi" }],
+          max_tokens: 5
+        })
+      });
+
+      if (response.ok) {
+        showToast(`🎉 翻译通道连通性测试成功！(${testModel})`);
+      } else {
+        const errJson = await response.json().catch(() => ({}));
+        showToast(`❌ 翻译测试失败: ${response.status} ${errJson.error?.message || response.statusText}`);
+      }
+    } catch (err) {
+      showToast(`❌ 翻译网络连接异常: ${err.message}`);
+    } finally {
+      btnTestTranslate.disabled = false;
+      spinner.classList.add("hidden");
+    }
+  });
+
+  // ====================== E. 聊天主模型测试与拉取 ======================
+  btnFetchModels.addEventListener("click", async () => {
+    const baseUrl = baseUrlInput.value.trim().replace(/\/+$/, "");
+    const apiKey = apiKeyInput.value.trim();
+    if (!baseUrl) {
+      showToast("⚠️ 请先填写 API Base URL");
+      return;
+    }
+
+    const spinner = btnFetchModels.querySelector(".spinner-sm");
+    btnFetchModels.disabled = true;
+    spinner.classList.remove("hidden");
+
+    try {
+      const response = await fetch(`${baseUrl}/models`, {
+        headers: {
+          "Authorization": apiKey ? `Bearer ${apiKey}` : ""
+        }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      let fetchedModels = [];
+      if (Array.isArray(data.data)) {
+        fetchedModels = data.data.map(item => item.id).filter(Boolean);
+      } else if (Array.isArray(data)) {
+        fetchedModels = data.map(item => item.id || item.name).filter(Boolean);
       }
 
-      const tplDiv = document.createElement("div");
-      tplDiv.className = "prompt-card-template";
-      tplDiv.textContent = item.systemPrompt || "";
+      if (fetchedModels.length > 0) {
+        const ch = channels.find(c => c.id === currentChannelId);
+        if (ch) ch.models = fetchedModels;
+        currentProviderModels = fetchedModels;
+        renderModelOptions("");
+        showToast(`🎉 成功拉取到 ${fetchedModels.length} 个可用模型！`);
+      } else {
+        showToast("⚠️ 未能在接口返回中识别到模型列表");
+      }
+    } catch (err) {
+      showToast(`❌ 拉取模型失败: ${err.message}`);
+    } finally {
+      btnFetchModels.disabled = false;
+      spinner.classList.add("hidden");
+    }
+  });
 
-      main.appendChild(header);
-      main.appendChild(tplDiv);
+  btnTestModel.addEventListener("click", async () => {
+    const baseUrl = baseUrlInput.value.trim().replace(/\/+$/, "");
+    const apiKey = apiKeyInput.value.trim();
+    const model = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
 
-      const actions = document.createElement("div");
-      actions.className = "prompt-card-actions";
+    if (!baseUrl || !apiKey || !model) {
+      showToast("⚠️ 请先完整填写 Base URL、API Key 与模型");
+      return;
+    }
 
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.className = "btn-card-action";
-      editBtn.textContent = "编辑";
-      editBtn.addEventListener("click", () => openEditModal(item));
+    const spinner = btnTestModel.querySelector(".spinner-sm");
+    btnTestModel.disabled = true;
+    spinner.classList.remove("hidden");
 
-      const delBtn = document.createElement("button");
-      delBtn.type = "button";
-      delBtn.className = "btn-card-action delete";
-      delBtn.textContent = "删除";
-      delBtn.addEventListener("click", () => deletePrompt(item.id));
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: "user", content: "hi" }],
+          max_tokens: 5
+        })
+      });
 
-      actions.appendChild(editBtn);
-      actions.appendChild(delBtn);
+      if (response.ok) {
+        showToast(`🎉 聊天模型连通性测试成功！(${model})`);
+      } else {
+        const errJson = await response.json().catch(() => ({}));
+        showToast(`❌ 测试失败: ${response.status} ${errJson.error?.message || response.statusText}`);
+      }
+    } catch (err) {
+      showToast(`❌ 连接失败: ${err.message}`);
+    } finally {
+      btnTestModel.disabled = false;
+      spinner.classList.add("hidden");
+    }
+  });
 
-      card.appendChild(main);
-      card.appendChild(actions);
+  // ====================== F. 划词提示词 CRUD ======================
+  const renderPromptsList = () => {
+    promptsListEl.innerHTML = "";
+    customPrompts.forEach(p => {
+      const card = document.createElement("div");
+      card.className = "prompt-card";
+      card.innerHTML = `
+        <div class="prompt-card-main">
+          <div class="prompt-card-header">
+            <span class="prompt-card-icon">${p.icon || "✨"}</span>
+            <span class="prompt-card-name">${p.name}</span>
+            ${p.isDefault ? '<span class="prompt-badge-default">预设</span>' : ''}
+          </div>
+          <div class="prompt-card-template">${escapeHtml(p.systemPrompt || "")}</div>
+        </div>
+        <div class="prompt-card-actions">
+          <button type="button" class="btn-card-action edit-btn" data-id="${p.id}">编辑</button>
+          ${!p.isDefault ? `<button type="button" class="btn-card-action delete delete-btn" data-id="${p.id}">删除</button>` : ''}
+        </div>
+      `;
       promptsListEl.appendChild(card);
     });
+
+    promptsListEl.querySelectorAll(".edit-btn").forEach(btn => {
+      btn.addEventListener("click", () => openPromptModal(btn.dataset.id));
+    });
+    promptsListEl.querySelectorAll(".delete-btn").forEach(btn => {
+      btn.addEventListener("click", () => deletePrompt(btn.dataset.id));
+    });
+  };
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
-  function openAddModal() {
-    modalTitle.textContent = "新增划词提示词";
-    promptIdInput.value = "";
-    promptIconInput.value = "💡";
-    promptNameInput.value = "";
-    promptTemplateInput.value = `请帮我解释以下内容。{context}（请结合上下文简要解析）：\n\n"{text}"`;
+  const openPromptModal = (id = null) => {
+    if (id) {
+      const target = customPrompts.find(p => p.id === id);
+      if (!target) return;
+      modalTitle.innerText = "编辑提示词";
+      promptIdInput.value = target.id;
+      promptIconInput.value = target.icon || "✨";
+      promptNameInput.value = target.name || "";
+      promptTemplateInput.value = target.systemPrompt || "";
+    } else {
+      modalTitle.innerText = "新增划词提示词";
+      promptIdInput.value = "";
+      promptIconInput.value = "⚡";
+      promptNameInput.value = "";
+      promptTemplateInput.value = "";
+    }
     promptModal.classList.remove("hidden");
-  }
+  };
 
-  function openEditModal(item) {
-    modalTitle.textContent = "编辑划词提示词";
-    promptIdInput.value = item.id;
-    promptIconInput.value = item.icon || "💡";
-    promptNameInput.value = item.name || "";
-    promptTemplateInput.value = item.systemPrompt || "";
-    promptModal.classList.remove("hidden");
-  }
-
-  function closeModal() {
+  const closePromptModal = () => {
     promptModal.classList.add("hidden");
-  }
+  };
 
-  function deletePrompt(id) {
-    if (confirm("确定要删除该提示词吗？网页划词面板中将不再出现此按钮。")) {
-      customPrompts = customPrompts.filter(p => p.id !== id);
-      chrome.storage.local.set({ customPrompts }, () => {
-        renderPromptsList();
-        showToast("🗑️ 提示词已删除");
-      });
-    }
-  }
-
-  btnModalClose.addEventListener("click", closeModal);
-  btnModalCancel.addEventListener("click", closeModal);
-  promptModal.addEventListener("click", (e) => {
-    if (e.target === promptModal) closeModal();
-  });
-
-  btnAddPrompt.addEventListener("click", openAddModal);
-
-  btnResetPrompts.addEventListener("click", () => {
-    if (confirm("确定要恢复默认预设吗？当前配置将被重置为“简易/中等/复杂”三个官方预设。")) {
-      customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS));
-      chrome.storage.local.set({ customPrompts }, () => {
-        renderPromptsList();
-        showToast("🔄 提示词已恢复为默认预设");
-      });
-    }
-  });
+  btnModalClose.addEventListener("click", closePromptModal);
+  btnModalCancel.addEventListener("click", closePromptModal);
+  btnAddPrompt.addEventListener("click", () => openPromptModal());
 
   promptForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    const id = promptIdInput.value.trim();
-    const icon = promptIconInput.value.trim() || "💡";
+    const id = promptIdInput.value;
+    const icon = promptIconInput.value.trim() || "✨";
     const name = promptNameInput.value.trim();
-    const systemPrompt = promptTemplateInput.value.trim();
+    const template = promptTemplateInput.value.trim();
 
-    if (!name || !systemPrompt) {
-      showToast("⚠️ 操作名称与提示词模板不能为空");
+    if (!name || !template) {
+      showToast("⚠️ 请填写名称与提示词内容");
       return;
     }
 
     if (id) {
-      // 编辑已有项
       const index = customPrompts.findIndex(p => p.id === id);
       if (index !== -1) {
-        customPrompts[index] = {
-          ...customPrompts[index],
-          icon,
-          name,
-          systemPrompt
-        };
+        customPrompts[index].icon = icon;
+        customPrompts[index].name = name;
+        customPrompts[index].systemPrompt = template;
       }
     } else {
-      // 新增项
       const newPrompt = {
         id: "prompt_" + Date.now(),
-        icon,
-        name,
-        systemPrompt,
+        icon: icon,
+        name: name,
+        systemPrompt: template,
         isDefault: false
       };
       customPrompts.push(newPrompt);
     }
 
-    chrome.storage.local.set({ customPrompts }, () => {
+    renderPromptsList();
+    closePromptModal();
+    showToast("✅ 提示词已保存");
+  });
+
+  const deletePrompt = (id) => {
+    if (confirm("确定要删除此提示词项吗？")) {
+      customPrompts = customPrompts.filter(p => p.id !== id);
       renderPromptsList();
-      closeModal();
-      showToast("✅ 提示词已成功保存！");
-    });
+      showToast("🗑️ 提示词已删除");
+    }
+  };
+
+  btnResetPrompts.addEventListener("click", () => {
+    if (confirm("确定要恢复默认预设的“简易、中等、复杂”提示词吗？")) {
+      customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS));
+      renderPromptsList();
+      showToast("🔄 已恢复为默认提示词预设");
+    }
   });
 
-  // 绑定实时换肤
-  themeSelectSelect.addEventListener("change", (e) => {
-    document.documentElement.setAttribute("data-theme", e.target.value);
-  });
-
-  // 4. 尝试加载本地 .env 文件
+  // ====================== G. 本地 .env 文件探测与导入 ======================
   try {
     const res = await fetch(chrome.runtime.getURL(".env"));
     if (res.ok) {
@@ -602,217 +822,166 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!line || line.startsWith("#")) continue;
         const parts = line.split("=");
         if (parts.length >= 2) {
-          const key = parts[0].trim();
-          const value = parts.slice(1).join("=").trim();
-          parsedEnv[key] = value;
+          const k = parts[0].trim();
+          const v = parts.slice(1).join("=").trim();
+          parsedEnv[k] = v;
         }
       }
 
-      if (parsedEnv.siliconflow_dsv4 || parsedEnv.deepseek_key) {
+      const hasValidKey = parsedEnv.siliconflow_dsv4 || parsedEnv.siliconflow_key ||
+                          parsedEnv.SILICONFLOW_API_KEY || parsedEnv.deepseek_key ||
+                          parsedEnv.DEEPSEEK_API_KEY || parsedEnv.OPENAI_API_KEY;
+      if (hasValidKey) {
         envConfig = parsedEnv;
         envBanner.classList.remove("hidden");
       }
     }
-  } catch (e) {
-    console.log("未检测到本地 .env 文件，请手动配置", e);
+  } catch (err) {
+    console.log("未探测到本地 .env 文件或读取受限", err);
   }
 
-  // 一键导入本地配置
   btnImportEnv.addEventListener("click", () => {
     if (!envConfig) return;
 
-    const currentProvider = providerSelect.value;
-    let importedCount = 0;
+    const sfKey = envConfig.siliconflow_dsv4 || envConfig.siliconflow_key || envConfig.SILICONFLOW_API_KEY;
+    const sfUrl = envConfig.siliconflow_url || envConfig.SILICONFLOW_URL || envConfig.SILICONFLOW_BASE_URL;
+    const dsKey = envConfig.deepseek_key || envConfig.DEEPSEEK_API_KEY;
+    const dsUrl = envConfig.deepseek_url || envConfig.DEEPSEEK_URL || envConfig.DEEPSEEK_BASE_URL;
 
-    const dataToSave = {};
-    if (envConfig.siliconflow_dsv4) {
-      dataToSave.key_siliconflow = envConfig.siliconflow_dsv4;
-      if (envConfig.siliconflow_url) dataToSave.url_siliconflow = envConfig.siliconflow_url;
-    }
-    if (envConfig.deepseek_key) {
-      dataToSave.key_deepseek = envConfig.deepseek_key;
-      if (envConfig.deepseek_url) dataToSave.url_deepseek = envConfig.deepseek_url;
-    }
-
-    chrome.storage.local.set(dataToSave, () => {
-      if (currentProvider === "siliconflow" && envConfig.siliconflow_dsv4) {
-        apiKeyInput.value = envConfig.siliconflow_dsv4;
-        if (envConfig.siliconflow_url) baseUrlInput.value = envConfig.siliconflow_url;
-        updateModelSuggestions("siliconflow", false, PRESETS.siliconflow.defaultModel);
-        importedCount++;
-      } else if (currentProvider === "deepseek" && envConfig.deepseek_key) {
-        apiKeyInput.value = envConfig.deepseek_key;
-        if (envConfig.deepseek_url) baseUrlInput.value = envConfig.deepseek_url;
-        updateModelSuggestions("deepseek", false, PRESETS.deepseek.defaultModel);
-        importedCount++;
-      } else {
-        if (envConfig.siliconflow_dsv4 && currentProvider !== "siliconflow") {
-          providerSelect.value = "siliconflow";
-          apiKeyInput.value = envConfig.siliconflow_dsv4;
-          baseUrlInput.value = envConfig.siliconflow_url || PRESETS.siliconflow.defaultUrl;
-          updateModelSuggestions("siliconflow", false, PRESETS.siliconflow.defaultModel);
-          importedCount++;
-        } else if (envConfig.deepseek_key && currentProvider !== "deepseek") {
-          providerSelect.value = "deepseek";
-          apiKeyInput.value = envConfig.deepseek_key;
-          baseUrlInput.value = envConfig.deepseek_url || PRESETS.deepseek.defaultUrl;
-          updateModelSuggestions("deepseek", false, PRESETS.deepseek.defaultModel);
-          importedCount++;
-        }
+    // 回填入渠道数组
+    channels.forEach(ch => {
+      if (ch.id === "siliconflow") {
+        if (sfKey) ch.apiKey = sfKey;
+        if (sfUrl) ch.baseUrl = sfUrl;
       }
-
-      if (importedCount > 0) {
-        showToast("✨ 本地 .env 变量导入并填充成功！点击“保存配置”生效。");
-      } else {
-        showToast("⚠️ 未能匹配当前提供商的有效配置");
+      if (ch.id === "deepseek") {
+        if (dsKey) ch.apiKey = dsKey;
+        if (dsUrl) ch.baseUrl = dsUrl;
       }
     });
+
+    const activeCh = channels.find(c => c.id === currentChannelId);
+    if (activeCh) loadChannelToForm(activeCh);
+
+    showToast("🎉 已从 .env 成功导入并同步配置！");
   });
 
-  // 4.5 模型获取与测试
-  const btnFetchModels = document.getElementById("btn-fetch-models");
-  const btnTestModel = document.getElementById("btn-test-model");
-
-  btnFetchModels.addEventListener("click", () => {
-    const apiKey = apiKeyInput.value.trim();
-    const baseUrl = baseUrlInput.value.trim();
-
-    if (!apiKey || !baseUrl) {
-      showToast("⚠️ 请先输入 API Key 和 Base URL");
-      return;
+  // ====================== H. 页面初始数据加载 ======================
+  chrome.storage.local.get([
+    "provider",
+    "baseUrl",
+    "apiKey",
+    "model",
+    "displayMode",
+    "closeStrategy",
+    "theme",
+    "popupWidth",
+    "popupHeight",
+    "overlayWidth",
+    "overlayHeight",
+    "channels",
+    "translateChannelId",
+    "translateModel",
+    "translateBatchTokens",
+    "customPrompts"
+  ], (result) => {
+    // 1. 初始化渠道数据
+    if (result.channels && Array.isArray(result.channels) && result.channels.length > 0) {
+      channels = result.channels;
+    } else {
+      channels = JSON.parse(JSON.stringify(DEFAULT_CHANNELS));
     }
 
-    btnFetchModels.disabled = true;
-    const spinner = btnFetchModels.querySelector(".spinner-sm");
-    const textSpan = btnFetchModels.querySelector("span");
-    spinner.classList.remove("hidden");
-    textSpan.innerText = "正在拉取...";
+    currentChannelId = result.provider || "siliconflow";
+    translateChannelId = result.translateChannelId || "siliconflow";
+    translateModelVal = result.translateModel || "deepseek-ai/DeepSeek-V3";
 
-    chrome.runtime.sendMessage({
-      type: "GET_MODELS",
-      apiKey,
-      baseUrl
-    }, (response) => {
-      btnFetchModels.disabled = false;
-      spinner.classList.add("hidden");
-      textSpan.innerText = "🔄 拉取可用模型";
+    // 2. 初始化尺寸
+    cachedPopupWidth = result.popupWidth || 380;
+    cachedPopupHeight = result.popupHeight || 680;
+    cachedOverlayWidth = result.overlayWidth || 560;
+    cachedOverlayHeight = result.overlayHeight || 640;
 
-      if (response && response.success) {
-        const currentSelected = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
-        const currentProvider = providerSelect.value;
-        
-        // 保存拉取到的模型到 storage
-        chrome.storage.local.set({ [`models_${currentProvider}`]: response.models });
-        
-        currentProviderModels = [...response.models];
-        modelSearchInput.value = "";
-        renderModelOptions("");
+    // 3. 呈现模式与外观
+    const displayMode = result.displayMode || "popup";
+    displayModeSelect.value = displayMode;
+    lastDisplayMode = displayMode;
+    syncWindowSizeState("popup", displayMode);
 
-        if (response.models.includes(currentSelected)) {
-          modelSelect.value = currentSelected;
-          modelCustom.classList.add("hidden");
-          modelCustom.required = false;
-        } else {
-          modelSelect.value = "__custom__";
-          modelCustom.classList.remove("hidden");
-          modelCustom.required = true;
-          modelCustom.value = currentSelected;
-        }
-        modelSelect.dispatchEvent(new Event("change"));
+    closeStrategySelect.value = result.closeStrategy || "manual";
+    syncCloseStrategyState();
 
-        showToast(`✅ 成功拉取并更新了 ${response.models.length} 个模型！`);
-      } else {
-        showToast(`❌ 拉取失败: ${response ? response.error : "未知错误"}`);
-      }
-    });
-  });
+    const theme = result.theme || "warm-amber";
+    themeSelect.value = theme;
+    document.documentElement.setAttribute("data-theme", theme);
 
-  btnTestModel.addEventListener("click", () => {
-    const apiKey = apiKeyInput.value.trim();
-    const baseUrl = baseUrlInput.value.trim();
-    const provider = providerSelect.value;
-    const model = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
+    // 4. 翻译批次与提示词
+    const batchTokens = result.translateBatchTokens || 4000;
+    translateBatchTokensInput.value = batchTokens;
+    translateBatchTokensRange.value = batchTokens;
 
-    if (!apiKey || !baseUrl || !model) {
-      showToast("⚠️ 请先填写完整 API Key、Base URL 以及模型名称");
-      return;
+    if (result.customPrompts && Array.isArray(result.customPrompts) && result.customPrompts.length > 0) {
+      customPrompts = result.customPrompts;
+    } else {
+      customPrompts = JSON.parse(JSON.stringify(DEFAULT_PROMPTS));
     }
+    renderPromptsList();
 
-    btnTestModel.disabled = true;
-    const spinner = btnTestModel.querySelector(".spinner-sm");
-    const textSpan = btnTestModel.querySelector("span");
-    spinner.classList.remove("hidden");
-    textSpan.innerText = "正在测试...";
+    // 5. 渲染渠道与表单回填
+    renderChannelsUI();
 
-    chrome.runtime.sendMessage({
-      type: "TEST_CONNECTION",
-      apiKey,
-      baseUrl,
-      model,
-      provider // 必须加上 provider 参数
-    }, (response) => {
-      btnTestModel.disabled = false;
-      spinner.classList.add("hidden");
-      textSpan.innerText = "🔌 测试连接与推理";
+    const currentChannel = channels.find(c => c.id === currentChannelId) || channels[0];
+    if (result.apiKey) currentChannel.apiKey = result.apiKey;
+    if (result.baseUrl) currentChannel.baseUrl = result.baseUrl;
+    if (result.model) currentChannel.model = result.model;
 
-      if (response && response.success) {
-        const supportThinking = response.supportThinking;
-        const storageKey = `support_thinking_${provider}_${model}`;
-        chrome.storage.local.set({ [storageKey]: supportThinking }, () => {
-          if (supportThinking) {
-            showToast(`🟢 连接成功！且检测到此模型支持思考(Thinking)过程。`);
-          } else {
-            showToast(`🟡 连接成功！但未检测到此模型的推理能力（不支持思考）。`);
-          }
-        });
-      } else {
-        showToast(`🔴 连接失败: ${response ? response.error : "未知错误"}`);
-      }
-    });
+    loadChannelToForm(currentChannel);
   });
 
-  // 5. 保存配置表单
+  // ====================== I. 全局保存配置 ======================
   settingsForm.addEventListener("submit", (e) => {
     e.preventDefault();
 
-    const displayMode = displayModeSelect.value;
-    const closeStrategy = closeStrategySelect.value;
-    const theme = themeSelectSelect.value;
+    saveCurrentFormToChannel(currentChannelId);
+
     const provider = providerSelect.value;
     const baseUrl = baseUrlInput.value.trim();
     const apiKey = apiKeyInput.value.trim();
     const model = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
 
-    if (modelSelect.value === "__custom__" && !model) {
-      showToast("⚠️ 自定义模型名称不能为空");
-      return;
+    const finalTranslateModel = translateModelSelect.value === "__custom__" ? translateModelCustom.value.trim() : translateModelSelect.value;
+    const finalTranslateTokens = parseInt(translateBatchTokensInput.value) || 4000;
+
+    const currentMode = displayModeSelect.value;
+    if (currentMode === "popup") {
+      cachedPopupWidth = parseInt(windowWidthInput.value) || cachedPopupWidth;
+      cachedPopupHeight = parseInt(windowHeightInput.value) || cachedPopupHeight;
+    } else if (currentMode === "inPage") {
+      cachedOverlayWidth = parseInt(windowWidthInput.value) || cachedOverlayWidth;
+      cachedOverlayHeight = parseInt(windowHeightInput.value) || cachedOverlayHeight;
     }
 
-    if (displayMode === "popup") {
-      cachedPopupWidth = parseInt(windowWidthInput.value) || 380;
-      cachedPopupHeight = parseInt(windowHeightInput.value) || 680;
-    } else if (displayMode === "inPage") {
-      cachedOverlayWidth = parseInt(windowWidthInput.value) || 560;
-      cachedOverlayHeight = parseInt(windowHeightInput.value) || 640;
-    }
-
-    const btnSave = document.getElementById("btn-save");
     const spinner = btnSave.querySelector(".spinner");
     btnSave.disabled = true;
     spinner.classList.remove("hidden");
 
     const settings = {
-      displayMode,
-      closeStrategy,
-      theme,
-      provider,
-      baseUrl,
-      apiKey,
-      model,
+      provider: provider,
+      baseUrl: baseUrl,
+      apiKey: apiKey,
+      model: model,
+      displayMode: currentMode,
+      closeStrategy: closeStrategySelect.value,
+      theme: themeSelect.value,
       popupWidth: cachedPopupWidth,
       popupHeight: cachedPopupHeight,
       overlayWidth: cachedOverlayWidth,
       overlayHeight: cachedOverlayHeight,
+      channels: channels,
+      translateChannelId: translateChannelSelect.value,
+      translateModel: finalTranslateModel,
+      translateBatchTokens: finalTranslateTokens,
+      customPrompts: customPrompts,
       [`key_${provider}`]: apiKey,
       [`url_${provider}`]: baseUrl,
       [`model_${provider}`]: model
@@ -822,8 +991,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       setTimeout(() => {
         btnSave.disabled = false;
         spinner.classList.add("hidden");
-        showToast("✅ 配置保存成功！您可以开始使用 AI 助手了。");
-      }, 600);
+        showToast("✅ 配置保存成功！设置已立即生效。");
+      }, 400);
     });
   });
 });
@@ -831,6 +1000,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 // Toast 提示
 function showToast(message) {
   const toast = document.getElementById("toast");
+  if (!toast) return;
   toast.innerText = message;
   toast.classList.remove("hidden");
   toast.classList.add("show");

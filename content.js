@@ -362,7 +362,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// 筛选页面中可翻译的文本块
+// 筛选页面中可翻译的文本块（识别并保护行内 <code> 标签）
 function collectTranslatableElements() {
   const candidateSelectors = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "dt", "dd", "figcaption"];
   const nodes = document.querySelectorAll(candidateSelectors.join(","));
@@ -370,13 +370,13 @@ function collectTranslatableElements() {
   let currentId = 1;
 
   nodes.forEach((node) => {
-    // 排除插件自身控件与代码、交互元素
-    if (node.closest(".llm4web-overlay, .llm4web-floating-bar, .llm4web-trans-bar, pre, code, script, style, noscript, svg, button, input, textarea, select, option, iframe")) {
+    // 排除插件自身控件与代码块、脚本、交互元素
+    if (node.closest(".llm4web-overlay, .llm4web-floating-bar, .llm4web-trans-bar, pre, script, style, noscript, svg, button, input, textarea, select, option, iframe")) {
       return;
     }
 
-    // 排除含有代码块子元素的节点，避免破坏代码
-    if (node.querySelector("code, pre")) {
+    // 排除含有大块 pre 代码块的节点
+    if (node.tagName.toLowerCase() === "pre" || node.querySelector("pre")) {
       return;
     }
 
@@ -384,20 +384,50 @@ function collectTranslatableElements() {
     const isVisible = (node.offsetParent !== null || node.getClientRects().length > 0) && window.getComputedStyle(node).visibility !== "hidden";
     if (!isVisible) return;
 
-    const rawText = node.innerText ? node.innerText.trim() : "";
+    // 识别并保护行内 <code> 标签
+    const codeSnippets = [];
+    let textToSend = "";
+
+    const inlineCodes = node.querySelectorAll("code");
+    if (inlineCodes.length > 0) {
+      // 提取所有行内 code 标签并用占位符安全替换
+      const clone = node.cloneNode(true);
+      const cloneCodes = clone.querySelectorAll("code");
+      cloneCodes.forEach((cEl, idx) => {
+        const placeholder = `[__CODE_${idx}__]`;
+        codeSnippets.push({
+          idx: idx,
+          placeholder: placeholder,
+          html: cEl.outerHTML // 保留原生完整的 code 节点标签和样式内容
+        });
+        const textNode = document.createTextNode(placeholder);
+        cEl.parentNode.replaceChild(textNode, cEl);
+      });
+      textToSend = clone.innerText ? clone.innerText.trim() : "";
+    } else {
+      textToSend = node.innerText ? node.innerText.trim() : "";
+    }
+
     // 排除过短、纯数字或无语言字符
-    if (rawText.length < 2 || !/[\p{L}\p{N}]/u.test(rawText)) {
+    if (textToSend.length < 2 || !/[\p{L}\p{N}]/u.test(textToSend)) {
       return;
     }
 
     list.push({
       id: currentId++,
       el: node,
-      text: rawText
+      text: textToSend,
+      codeSnippets: codeSnippets
     });
   });
 
   return list;
+}
+
+// Token 容量估算函数
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.max(1, Math.ceil(text.length * 0.7));
 }
 
 // 创建或显示翻译控制浮条
@@ -439,8 +469,8 @@ function ensureTransControlBar() {
       });
     } else {
       btnToggle.textContent = "👁️ 切换原文";
-      translatedElementsMap.forEach(({ el, translatedText }) => {
-        el.innerText = translatedText;
+      translatedElementsMap.forEach(({ el, translatedHtml }) => {
+        el.innerHTML = translatedHtml;
       });
     }
   });
@@ -498,19 +528,24 @@ async function startPageTranslation() {
     }
   });
 
-  // 分批打包（每批最多 12 个段落，或总字符数不超过 2200）
+  // 读取用户配置的单批次 Token 大小（默认 4000 tokens）
+  const storageSettings = await new Promise(r => chrome.storage.local.get(["translateBatchTokens"], r));
+  const maxBatchTokens = parseInt(storageSettings?.translateBatchTokens) || 4000;
+
+  // 分批打包（根据 Token 估算算法动态打包，达到用户设定的单批次容量上限时切分）
   const batches = [];
   let currentBatch = [];
-  let currentLength = 0;
+  let currentBatchTokens = 0;
 
   for (const item of elements) {
-    if (currentBatch.length >= 12 || (currentLength + item.text.length > 2200 && currentBatch.length > 0)) {
+    const itemTokens = estimateTokens(item.text);
+    if (currentBatch.length > 0 && (currentBatchTokens + itemTokens > maxBatchTokens)) {
       batches.push(currentBatch);
       currentBatch = [];
-      currentLength = 0;
+      currentBatchTokens = 0;
     }
     currentBatch.push(item);
-    currentLength += item.text.length;
+    currentBatchTokens += itemTokens;
   }
   if (currentBatch.length > 0) {
     batches.push(currentBatch);
@@ -542,19 +577,38 @@ async function startPageTranslation() {
         break;
       }
 
-      // 成功返回，原位替换段落
+      // 成功返回，原位替换段落并精准复原行内 <code>
       const results = response.results || [];
       const resultMap = new Map(results.map(r => [r.id, r.translatedText]));
 
-      batch.forEach(({ id, el }) => {
-        const trans = resultMap.get(id);
+      batch.forEach((item) => {
+        const trans = resultMap.get(item.id);
         if (trans) {
-          el.innerText = trans;
-          el.classList.add("llm4web-translated-node");
-          translatedElementsMap.set(id, {
-            el: el,
-            originalHtml: el.dataset.llm4webOriginal,
-            translatedText: trans
+          let finalHtml = "";
+          if (item.codeSnippets && item.codeSnippets.length > 0) {
+            // 对外部文字做基础实体保护
+            let safeText = trans
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;");
+
+            // 精确还原 [__CODE_x__] 占位符为原有的 <code>...</code> 原始节点
+            item.codeSnippets.forEach(cs => {
+              const reg = new RegExp(`\\[\\s*__CODE_${cs.idx}__\\s*\\]`, "g");
+              safeText = safeText.replace(reg, cs.html);
+            });
+            finalHtml = safeText;
+            item.el.innerHTML = finalHtml;
+          } else {
+            item.el.innerText = trans;
+            finalHtml = item.el.innerHTML;
+          }
+
+          item.el.classList.add("llm4web-translated-node");
+          translatedElementsMap.set(item.id, {
+            el: item.el,
+            originalHtml: item.el.dataset.llm4webOriginal,
+            translatedHtml: finalHtml
           });
         }
         completedCount++;

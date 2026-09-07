@@ -11,183 +11,296 @@
     <header class="header">
       <div class="logo">
         <img src="icons/icon-48.png" alt="Logo" class="logo-img">
-        <h1 class="title">AI Assistant Settings</h1>
+        <h1 class="title">LLM4Web 助手配置中心</h1>
       </div>
-      <p class="subtitle">配置您的 API 提供商、密钥和模型，支持流式渲染与思考过程展示</p>
+      <p class="subtitle">解耦双栏架构：左侧配置基础偏好与划词对话通道，右侧专属定制网页全篇翻译独立路由</p>
     </header>
 
-    <main class="settings-card">
-      <!-- 快捷导入面板 -->
-      <div id="env-banner" class="env-banner hidden">
-        <div class="env-banner-text">
-          <span class="sparkle">✨</span>
-          <span>检测到本地 <code>.env</code> 测试文件，可一键导入配置！</span>
+    <!-- 顶部快捷导入面板 -->
+    <div id="env-banner" class="env-banner hidden">
+      <div class="env-banner-text">
+        <span class="sparkle">✨</span>
+        <span>检测到本地 <code>.env</code> 配置文件，可快速导入 API 密钥与服务地址！</span>
+      </div>
+      <button type="button" id="btn-import-env" class="btn-secondary">一键导入配置</button>
+    </div>
+
+    <form id="settings-form">
+      <!-- 两栏式主工作区 -->
+      <div class="settings-grid">
+        <!-- ====================== 左栏：原始设置与划词对话通道 ====================== -->
+        <div class="settings-column left-column">
+          <!-- 1. 窗口与外观偏好 -->
+          <section class="settings-section-card">
+            <div class="section-card-title">
+              <span class="section-icon">🎨</span>
+              <h3>窗口呈现与界面偏好</h3>
+            </div>
+
+            <!-- 呈现模式 -->
+            <div class="form-group">
+              <label for="display-mode">呈现方式 (Display Mode)</label>
+              <div class="select-wrapper">
+                <select id="display-mode" required>
+                  <option value="popup">悬浮小窗口 (Popup Window)</option>
+                  <option value="sidePanel">侧边栏模式 (Side Panel)</option>
+                  <option value="inPage">页面内悬浮面板 (Floating Overlay)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 尺寸设置 -->
+            <div class="form-group" id="window-size-group">
+              <label>悬浮窗口尺寸自定义</label>
+              <div class="modern-size-container">
+                <!-- 宽度调节卡片 -->
+                <div class="size-card">
+                  <div class="size-card-header">
+                    <span class="size-card-title">📐 窗口宽度</span>
+                    <span class="size-card-value">
+                      <input type="number" id="window-width" min="200" max="2000" required>
+                      <span class="unit">px</span>
+                    </span>
+                  </div>
+                  <div class="slider-wrapper">
+                    <input type="range" id="window-width-range" min="200" max="2000" class="modern-slider">
+                  </div>
+                </div>
+                
+                <!-- 高度调节卡片 -->
+                <div class="size-card">
+                  <div class="size-card-header">
+                    <span class="size-card-title">📏 窗口高度</span>
+                    <span class="size-card-value">
+                      <input type="number" id="window-height" min="200" max="2000" required>
+                      <span class="unit">px</span>
+                    </span>
+                  </div>
+                  <div class="slider-wrapper">
+                    <input type="range" id="window-height-range" min="200" max="2000" class="modern-slider">
+                  </div>
+                </div>
+              </div>
+              <span class="help-text" id="window-size-hint">设置悬浮小窗口或页面内悬浮面板的初始默认大小。</span>
+            </div>
+
+            <!-- 窗口关闭策略 -->
+            <div class="form-group" id="close-strategy-group">
+              <label for="close-strategy">小窗口关闭方式 (Close Strategy)</label>
+              <div class="select-wrapper">
+                <select id="close-strategy" required>
+                  <option value="manual">主动关闭才关闭 (默认)</option>
+                  <option value="blur">点击其他网页空白处自动关闭</option>
+                </select>
+              </div>
+              <span class="help-text hidden" id="close-strategy-hint">页面内悬浮面板不依赖窗口焦点，此设置不生效。</span>
+            </div>
+
+            <!-- 配色主题 -->
+            <div class="form-group">
+              <label for="theme-select">界面配色方案 (Theme)</label>
+              <div class="select-wrapper">
+                <select id="theme-select" required>
+                  <option value="warm-amber">🌼 柔和暖米淡黄 (默认护眼)</option>
+                  <option value="silver-white">🌪️ 极简质感银白</option>
+                  <option value="cyber-cyan">🌐 极光数码科技青</option>
+                  <option value="lavender-purple">🔮 浪漫薰衣草紫</option>
+                  <option value="forest-green">🌲 优雅深林黛绿</option>
+                  <option value="classic-dark">🎱 经典深邃磨砂黑</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <!-- 2. 聊天与划词 API 渠道 -->
+          <section class="settings-section-card">
+            <div class="section-card-title">
+              <span class="section-icon">💬</span>
+              <h3>对话与划词 API 渠道</h3>
+            </div>
+
+            <!-- 接口提供商与多渠道管理 -->
+            <div class="form-group">
+              <div class="channel-header-row">
+                <label for="provider">当前使用渠道 (Channel)</label>
+                <div class="channel-btn-group">
+                  <button type="button" id="btn-add-channel" class="btn-secondary-action" title="新增自定义 API 渠道">
+                    <span>➕ 新增渠道</span>
+                  </button>
+                  <button type="button" id="btn-delete-channel" class="btn-secondary-action btn-danger-action hidden" title="删除当前选中的自定义渠道">
+                    <span>🗑️ 删除渠道</span>
+                  </button>
+                </div>
+              </div>
+              <div class="select-wrapper">
+                <select id="provider" required>
+                  <!-- 动态根据 channels 填充 -->
+                </select>
+              </div>
+            </div>
+
+            <!-- Base URL -->
+            <div class="form-group">
+              <label for="base-url">API Base URL (服务商接口地址)</label>
+              <input type="url" id="base-url" placeholder="https://api.siliconflow.cn/v1" required>
+            </div>
+
+            <!-- API Key -->
+            <div class="form-group">
+              <label for="api-key">API Key (密钥)</label>
+              <div class="input-password-wrapper">
+                <input type="password" id="api-key" placeholder="输入您的 API Key" autocomplete="new-password" required>
+                <button type="button" id="toggle-password" class="password-toggle-btn" title="点击显示/隐藏密钥">
+                  <svg id="eye-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Model -->
+            <div class="form-group">
+              <label for="model-select">聊天与划词模型 (Model Name)</label>
+              <div class="input-suggest-wrapper">
+                <input type="text" id="model-search" placeholder="🔍 输入关键字过滤模型列表..." style="margin-bottom: 6px;">
+                <div class="select-wrapper">
+                  <select id="model-select" required>
+                    <!-- 动态根据 Provider 插入 -->
+                  </select>
+                </div>
+                <input type="text" id="model-custom" class="hidden" placeholder="请输入自定义模型名称，例如 deepseek-v4-pro" style="margin-top: 6px;">
+              </div>
+              <div class="model-action-buttons">
+                <button type="button" id="btn-fetch-models" class="btn-secondary-action" title="拉取当前配置下服务商提供的所有模型">
+                  <span>🔄 拉取可用模型</span>
+                  <div class="spinner-sm hidden"></div>
+                </button>
+                <button type="button" id="btn-test-model" class="btn-secondary-action" title="发送 1 token 测试连通性并自动探测推理(Thinking)支持状态">
+                  <span>🔌 测试连接与推理</span>
+                  <div class="spinner-sm hidden"></div>
+                </button>
+              </div>
+              <span class="help-text">此模型应用于侧边栏日常问答和划词浮动药丸取义。</span>
+            </div>
+          </section>
+
+          <!-- 3. 划词提示词管理 -->
+          <section class="settings-section-card">
+            <div class="prompts-manager-header">
+              <div class="section-card-title" style="margin-bottom: 0;">
+                <span class="section-icon">⚡</span>
+                <div>
+                  <h3>划词快捷提示词管理 (Prompts CRUD)</h3>
+                  <span class="help-text">配置点击网页划词后浮现的操作小药丸。</span>
+                </div>
+              </div>
+              <div class="prompts-actions">
+                <button type="button" id="btn-reset-prompts" class="btn-secondary-action" title="恢复预设">
+                  <span>🔄 重置</span>
+                </button>
+                <button type="button" id="btn-add-prompt" class="btn-secondary-action btn-add-prompt" title="新增提示词">
+                  <span>➕ 新增</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 提示词卡片列表 -->
+            <div id="prompts-list" class="prompts-list">
+              <!-- 动态渲染提示词项 -->
+            </div>
+          </section>
         </div>
-        <button id="btn-import-env" class="btn-secondary">一键导入</button>
+
+        <!-- ====================== 右栏：Web 网页全篇翻译独立路由 ====================== -->
+        <div class="settings-column right-column">
+          <!-- 1. 网页翻译独立路由核心设置 -->
+          <section class="settings-section-card highlight-card">
+            <div class="section-card-title">
+              <span class="section-icon">🌐</span>
+              <div>
+                <h3>Web 网页全篇翻译独立路由</h3>
+                <span class="help-text">独立渠道、独立模型与分批控制，不与划词日常对话争抢通道</span>
+              </div>
+            </div>
+
+            <!-- 翻译独立渠道选择 -->
+            <div class="form-group">
+              <label for="translate-channel-select">翻译专用服务渠道 (Translate Channel)</label>
+              <div class="select-wrapper">
+                <select id="translate-channel-select">
+                  <!-- 动态由 channels 填充 -->
+                </select>
+              </div>
+              <span class="help-text">支持选用与日常对话不同的轻量、高性价比 API 厂商。</span>
+            </div>
+
+            <!-- 翻译模型选择 -->
+            <div class="form-group">
+              <label for="translate-model-select">翻译专用模型 (Translate Model)</label>
+              <div class="input-suggest-wrapper">
+                <div class="select-wrapper">
+                  <select id="translate-model-select">
+                    <!-- 动态根据翻译渠道填充 -->
+                  </select>
+                </div>
+                <input type="text" id="translate-model-custom" class="hidden" placeholder="请输入自定义翻译模型，如 deepseek-chat 或 gpt-4o-mini" style="margin-top: 6px;">
+              </div>
+              <div class="model-action-buttons">
+                <button type="button" id="btn-test-translate" class="btn-secondary-action" title="测试翻译专用模型连通性">
+                  <span>🔌 测试翻译连通性</span>
+                  <div class="spinner-sm hidden"></div>
+                </button>
+              </div>
+              <span class="help-text">💡 建议选择非推理思考的通用大模型（如 deepseek-chat、gpt-4o-mini 等），以达到极速译文回显。</span>
+            </div>
+
+            <!-- 单批次 Token 上限 -->
+            <div class="form-group">
+              <div class="size-card-header">
+                <span class="size-card-title">📦 翻译单批次 Token 上限 (Batch Limit)</span>
+                <span class="size-card-value">
+                  <input type="number" id="translate-batch-tokens" min="500" max="16000" step="500" value="4000" required>
+                  <span class="unit">tokens</span>
+                </span>
+              </div>
+              <div class="slider-wrapper">
+                <input type="range" id="translate-batch-tokens-range" min="500" max="16000" step="500" value="4000" class="modern-slider">
+              </div>
+              <span class="help-text">默认 4000 tokens。系统自动将网页文本智能按段落拆包批量提交，既保持全文语义高度连贯，又兼顾并发翻译流畅度。</span>
+            </div>
+          </section>
+
+          <!-- 2. 网页翻译代码保护机制说明 -->
+          <section class="settings-section-card feature-showcase-card">
+            <div class="section-card-title">
+              <span class="section-icon">🛡️</span>
+              <h3>行内代码与标签智能保护机制</h3>
+            </div>
+            <p class="feature-desc">
+              在网页翻译时，正文中的 <code>&lt;code&gt;</code>、行内术语、函数标识将由系统自动做占位替换，严格保护代码原始形态，杜绝模型胡乱翻译代码：
+            </p>
+            <div class="code-example-box">
+              <div class="code-example-line"><span class="tag">&lt;p&gt;</span>Please install <span class="code-pill">uv pip install fastapi</span> first.<span class="tag">&lt;/p&gt;</span></div>
+              <div class="arrow-down">⬇️ 翻译输出完美保留代码</div>
+              <div class="code-example-line"><span class="tag">&lt;p&gt;</span>请先安装 <span class="code-pill">uv pip install fastapi</span>。<span class="tag">&lt;/p&gt;</span></div>
+            </div>
+            <ul class="feature-bullets">
+              <li>✅ <strong>双路由解耦</strong>：网页整页翻译时，依然可随时打开侧边栏进行无干扰对话。</li>
+              <li>✅ <strong>右键一键触发</strong>：在任何网页右键点击“LLM4Web: 网页翻译”即可全自动替换正文。</li>
+            </ul>
+          </section>
+        </div>
       </div>
 
-      <form id="settings-form">
-        <!-- 呈现模式 -->
-        <div class="form-group">
-          <label for="display-mode">呈现方式 (Display Mode)</label>
-          <div class="select-wrapper">
-            <select id="display-mode" required>
-              <option value="popup">悬浮小窗口 (Popup Window)</option>
-              <option value="sidePanel">侧边栏模式 (Side Panel)</option>
-              <option value="inPage">页面内悬浮面板 (Floating Overlay)</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- 尺寸设置 -->
-        <div class="form-group" id="window-size-group">
-          <label>悬浮窗口尺寸自定义</label>
-          <div class="modern-size-container">
-            <!-- 宽度调节卡片 -->
-            <div class="size-card">
-              <div class="size-card-header">
-                <span class="size-card-title">📐 窗口宽度</span>
-                <span class="size-card-value">
-                  <input type="number" id="window-width" min="200" max="2000" required>
-                  <span class="unit">px</span>
-                </span>
-              </div>
-              <div class="slider-wrapper">
-                <input type="range" id="window-width-range" min="200" max="2000" class="modern-slider">
-              </div>
-            </div>
-            
-            <!-- 高度调节卡片 -->
-            <div class="size-card">
-              <div class="size-card-header">
-                <span class="size-card-title">📏 窗口高度</span>
-                <span class="size-card-value">
-                  <input type="number" id="window-height" min="200" max="2000" required>
-                  <span class="unit">px</span>
-                </span>
-              </div>
-              <div class="slider-wrapper">
-                <input type="range" id="window-height-range" min="200" max="2000" class="modern-slider">
-              </div>
-            </div>
-          </div>
-          <span class="help-text" id="window-size-hint">设置悬浮小窗口或页面内悬浮面板的尺寸大小。</span>
-        </div>
-
-        <!-- 窗口关闭策略 -->
-        <div class="form-group" id="close-strategy-group">
-          <label for="close-strategy">小窗口关闭方式 (Close Strategy)</label>
-          <div class="select-wrapper">
-            <select id="close-strategy" required>
-              <option value="manual">主动关闭才关闭 (默认)</option>
-              <option value="blur">点击其他网页空白处自动关闭</option>
-            </select>
-          </div>
-          <span class="help-text hidden" id="close-strategy-hint">页面内悬浮面板是网页内的一层，不依赖窗口焦点，该设置不生效。</span>
-        </div>
-
-        <!-- 配色主题 -->
-        <div class="form-group">
-          <label for="theme-select">界面配色方案 (Theme)</label>
-          <div class="select-wrapper">
-            <select id="theme-select" required>
-              <option value="warm-amber">🌼 柔和暖米淡黄 (默认护眼)</option>
-              <option value="silver-white">🌪️ 极简质感银白</option>
-              <option value="cyber-cyan">🌐 极光数码科技青</option>
-              <option value="lavender-purple">🔮 浪漫薰衣草紫</option>
-              <option value="forest-green">🌲 优雅深林黛绿</option>
-              <option value="classic-dark">🎱 经典深邃磨砂黑</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- 接口提供商 -->
-        <div class="form-group">
-          <label for="provider">API 提供商</label>
-          <div class="select-wrapper">
-            <select id="provider" required>
-              <option value="siliconflow">硅基流动 (SiliconFlow)</option>
-              <option value="deepseek">DeepSeek 官方</option>
-              <option value="custom">自定义 (Custom OpenAI-compatible)</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Base URL -->
-        <div class="form-group">
-          <label for="base-url">API Base URL</label>
-          <input type="url" id="base-url" placeholder="https://api.siliconflow.cn/v1" required>
-        </div>
-
-        <!-- API Key -->
-        <div class="form-group">
-          <label for="api-key">API Key (密钥)</label>
-          <div class="input-password-wrapper">
-            <input type="password" id="api-key" placeholder="输入您的 API Key" required>
-            <button type="button" id="toggle-password" class="password-toggle-btn" title="显示/隐藏">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                <circle cx="12" cy="12" r="3"></circle>
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <!-- Model -->
-        <div class="form-group">
-          <label for="model-select">模型 (Model Name)</label>
-          <div class="input-suggest-wrapper" style="display: flex; flex-direction: column; gap: 8px;">
-            <input type="text" id="model-search" placeholder="🔍 输入关键字过滤模型列表..." style="margin-bottom: 4px;">
-            <select id="model-select" required>
-              <!-- 动态根据 Provider 插入，且最末包含“自定义输入...”项 -->
-            </select>
-            <input type="text" id="model-custom" class="hidden" placeholder="请输入自定义模型名称，例如 deepseek-v4-pro" required>
-          </div>
-          <div class="model-action-buttons">
-            <button type="button" id="btn-fetch-models" class="btn-secondary-action" title="拉取当前配置下服务商提供的所有模型">
-              <span>🔄 拉取可用模型</span>
-              <div class="spinner-sm hidden"></div>
-            </button>
-            <button type="button" id="btn-test-model" class="btn-secondary-action" title="发送 1 token 测试连通性并自动探测推理(Thinking)支持状态">
-              <span>🔌 测试连接与推理</span>
-              <div class="spinner-sm hidden"></div>
-            </button>
-          </div>
-          <span class="help-text">拉取最新模型可以更新下拉菜单；测试连接能够自动探测当前模型是否支持推理模式（Thinking）。</span>
-        </div>
-
-        <!-- 划词提示词 / System Prompt 自定义管理 -->
-        <div class="form-group prompts-manager-group">
-          <div class="prompts-manager-header">
-            <div>
-              <label>划词快捷提示词 / 模式解耦 (Prompts CRUD)</label>
-              <span class="help-text">此处配置的提示词将直接渲染到网页划词后浮现的操作小药丸中。支持自定义增删改查。</span>
-            </div>
-            <div class="prompts-actions">
-              <button type="button" id="btn-reset-prompts" class="btn-secondary-action" title="恢复为默认的“简易/中等/复杂”三个预设">
-                <span>🔄 恢复默认预设</span>
-              </button>
-              <button type="button" id="btn-add-prompt" class="btn-secondary-action btn-add-prompt" title="新增自定义提示词">
-                <span>➕ 新增提示词</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 提示词卡片列表容器 -->
-          <div id="prompts-list" class="prompts-list">
-            <!-- 动态渲染提示词项 -->
-          </div>
-        </div>
-
-        <!-- 提交区域 -->
-        <div class="form-actions">
-          <button type="submit" id="btn-save" class="btn-primary">
-            <span>保存配置</span>
-            <div class="spinner hidden"></div>
-          </button>
-        </div>
-      </form>
-    </main>
+      <!-- 全局统一提交保存栏 -->
+      <div class="global-actions-bar">
+        <button type="submit" id="btn-save" class="btn-primary btn-save-large">
+          <span>💾 保存全部配置</span>
+          <div class="spinner hidden"></div>
+        </button>
+      </div>
+    </form>
 
     <!-- 提示词编辑/新增模态框 -->
     <div id="prompt-modal" class="modal-overlay hidden">
@@ -213,7 +326,7 @@
           <div class="form-group">
             <label for="prompt-template">提示词模板 (System / User Prompt)</label>
             <textarea id="prompt-template" rows="5" placeholder="请输入发给大模型的提示词。支持使用 {text} 表示划选文本，使用 {context} 表示前后文语境。" required></textarea>
-            <span class="help-text">提示：可在模板中加入 <code>{text}</code>（选中的文本）与 <code>{context}</code>（网页前后文背景）。</span>
+            <span class="help-text">提示：可在模板中加入 <code>{text}</code>（选中文本）与 <code>{context}</code>（网页前后文语境）。</span>
           </div>
 
           <div class="modal-actions">
@@ -224,9 +337,46 @@
       </div>
     </div>
 
+    <!-- 渠道新增模态框 -->
+    <div id="channel-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">➕ 新增自定义 API 渠道</h3>
+          <button type="button" id="btn-channel-modal-close" class="modal-close-btn">&times;</button>
+        </div>
+        <form id="channel-form" class="modal-body">
+          <div class="form-group">
+            <label for="new-channel-name">渠道名称 (厂商名称)</label>
+            <input type="text" id="new-channel-name" placeholder="例如：OpenAI 官方、Ollama 本地、月之暗面等" required>
+          </div>
+
+          <div class="form-group">
+            <label for="new-channel-url">API Base URL</label>
+            <input type="url" id="new-channel-url" placeholder="https://api.openai.com/v1" required>
+          </div>
+
+          <div class="form-group">
+            <label for="new-channel-key">API Key (密钥)</label>
+            <input type="password" id="new-channel-key" placeholder="输入 API Key" required>
+          </div>
+
+          <div class="form-group">
+            <label for="new-channel-model">默认模型名称</label>
+            <input type="text" id="new-channel-model" placeholder="例如：gpt-4o-mini、llama3 等" required>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" id="btn-channel-modal-cancel" class="btn-secondary">取消</button>
+            <button type="submit" id="btn-channel-modal-save" class="btn-primary">保存渠道并切换</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- 浮动提示通知 -->
     <div id="toast" class="toast hidden"></div>
   </div>
+
   <script src="options.js"></script>
 </body>
 </html>

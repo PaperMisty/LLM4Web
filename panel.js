@@ -105,7 +105,7 @@ function initEmbeddedMode() {
 
 // 加载 Chrome Storage 中的配置
 function loadConfig() {
-  chrome.storage.local.get(["provider", "apiKey", "baseUrl", "model", "enableThinking", "theme"], (result) => {
+  chrome.storage.local.get(["channels", "currentChannelId", "provider", "apiKey", "baseUrl", "model", "enableThinking", "theme"], (result) => {
     appConfig = result;
     
     // 应用主题换肤（默认为 warm-amber 淡黄）
@@ -116,17 +116,35 @@ function loadConfig() {
     const enableThinking = result.enableThinking !== false;
     cbThinkingEl.checked = enableThinking;
 
-    const currentProvider = result.provider || "siliconflow";
+    const currentProvider = result.currentChannelId || result.provider || "siliconflow";
     const currentModel = result.model || "";
 
-    // 填充与回填页眉下拉菜单
+    // 动态填充页眉渠道下拉菜单
+    const channels = result.channels || [];
+    headerProviderSelect.innerHTML = "";
+    if (channels.length > 0) {
+      channels.forEach(ch => {
+        const opt = document.createElement("option");
+        opt.value = ch.id;
+        opt.textContent = ch.name;
+        headerProviderSelect.appendChild(opt);
+      });
+    } else {
+      ["siliconflow", "deepseek", "custom"].forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        headerProviderSelect.appendChild(opt);
+      });
+    }
     headerProviderSelect.value = currentProvider;
 
+    const activeChannel = channels.find(c => c.id === currentProvider);
     const cacheKeyModels = `models_${currentProvider}`;
     chrome.storage.local.get([cacheKeyModels], (modelsResult) => {
       let modelsList = modelsResult[cacheKeyModels];
       if (!modelsList || !Array.isArray(modelsList)) {
-        modelsList = PRESETS[currentProvider]?.models || [];
+        modelsList = activeChannel?.models || PRESETS[currentProvider]?.models || (activeChannel?.model ? [activeChannel.model] : []);
       }
 
       headerModelSelect.innerHTML = "";
@@ -137,7 +155,7 @@ function loadConfig() {
         headerModelSelect.appendChild(option);
       });
 
-      // 如果当前模型不在列表中，动态追加（例如用户手动输入的自定义模型）
+      // 如果当前模型不在列表中，动态追加
       if (currentModel && !modelsList.includes(currentModel)) {
         const option = document.createElement("option");
         option.value = currentModel;
@@ -188,20 +206,26 @@ function initEventListeners() {
   btnSettingsEl.addEventListener("click", openSettings);
   btnGoToSettingsEl.addEventListener("click", openSettings);
 
-  // 页眉提供商选择框改变事件
+  // 页眉提供商/渠道选择框改变事件
   headerProviderSelect.addEventListener("change", (e) => {
-    const newProvider = e.target.value;
-    chrome.storage.local.get([`key_${newProvider}`, `url_${newProvider}`, `model_${newProvider}`], (res) => {
-      const apiKey = res[`key_${newProvider}`] || "";
-      const baseUrl = res[`url_${newProvider}`] || "";
-      const savedModel = res[`model_${newProvider}`] || PRESETS[newProvider].defaultModel;
-
-      chrome.storage.local.set({
-        provider: newProvider,
-        apiKey: apiKey,
-        baseUrl: baseUrl,
-        model: savedModel
-      });
+    const newChannelId = e.target.value;
+    chrome.storage.local.get(["channels"], (res) => {
+      const channels = res.channels || [];
+      const ch = channels.find(c => c.id === newChannelId);
+      if (ch) {
+        chrome.storage.local.set({
+          provider: newChannelId,
+          currentChannelId: newChannelId,
+          apiKey: ch.apiKey || "",
+          baseUrl: ch.baseUrl || "",
+          model: ch.model || ch.defaultModel || ""
+        });
+      } else {
+        chrome.storage.local.set({
+          provider: newChannelId,
+          currentChannelId: newChannelId
+        });
+      }
     });
   });
 
