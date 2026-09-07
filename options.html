@@ -233,6 +233,24 @@
                 </select>
               </div>
               <span class="help-text">支持选用与日常对话不同的轻量、高性价比 API 厂商。</span>
+
+              <!-- 自动绑定指示器 -->
+              <div class="channel-binding-card" id="translate-binding-card">
+                <div class="binding-card-header">
+                  <span class="binding-icon">🔗</span>
+                  <span class="binding-title">已自动联动绑定该厂商接口与密钥</span>
+                </div>
+                <div class="binding-card-body">
+                  <div class="binding-item">
+                    <span class="binding-label">接口:</span>
+                    <code id="translate-binding-url" class="binding-code">https://api.siliconflow.cn/v1</code>
+                  </div>
+                  <div class="binding-item">
+                    <span class="binding-label">密钥:</span>
+                    <span id="translate-binding-key" class="binding-status-badge ready">已就绪</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- 翻译模型选择 -->

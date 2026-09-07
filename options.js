@@ -148,6 +148,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 右栏：翻译独立路由 DOM
   const translateChannelSelect = document.getElementById("translate-channel-select");
+  const translateBindingUrl = document.getElementById("translate-binding-url");
+  const translateBindingKey = document.getElementById("translate-binding-key");
   const translateModelSelect = document.getElementById("translate-model-select");
   const translateModelCustom = document.getElementById("translate-model-custom");
   const btnTestTranslate = document.getElementById("btn-test-translate");
@@ -507,6 +509,32 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // ====================== D. 翻译专用路由 ======================
+  // 实时刷新翻译渠道绑定的 Base URL 和 密钥状态
+  const updateTranslateBindingStatus = () => {
+    const channelId = translateChannelSelect.value;
+    const channel = channels.find(c => c.id === channelId);
+    if (!channel) return;
+
+    // 优先读取该渠道配置，若正好是左侧正在编辑的主渠道则读取实时输入框
+    const activeUrl = (channelId === currentChannelId ? baseUrlInput.value.trim() : "") ||
+                      channel.baseUrl || PRESETS[channelId]?.defaultUrl || "";
+    const activeKey = (channelId === currentChannelId ? apiKeyInput.value.trim() : "") ||
+                      channel.apiKey || "";
+
+    if (translateBindingUrl) {
+      translateBindingUrl.textContent = activeUrl || "（未设置服务地址）";
+    }
+    if (translateBindingKey) {
+      if (activeKey) {
+        translateBindingKey.textContent = "已就绪";
+        translateBindingKey.className = "binding-status-badge ready";
+      } else {
+        translateBindingKey.textContent = "未配置密钥 (请在左侧切换该渠道填写)";
+        translateBindingKey.className = "binding-status-badge missing";
+      }
+    }
+  };
+
   const updateTranslateModelSuggestions = () => {
     const channel = channels.find(c => c.id === translateChannelSelect.value);
     if (!channel) return;
@@ -536,6 +564,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       translateModelSelect.value = modelsList[0] || "__custom__";
       translateModelCustom.classList.add("hidden");
     }
+
+    // 同步更新绑定状态
+    updateTranslateBindingStatus();
   };
 
   translateChannelSelect.addEventListener("change", (e) => {
@@ -557,20 +588,41 @@ document.addEventListener("DOMContentLoaded", async () => {
     translateModelVal = e.target.value.trim();
   });
 
+  // 左侧输入框实时修改时，若右侧选的恰好是该渠道，自动联动更新绑定卡片
+  baseUrlInput.addEventListener("input", () => {
+    const ch = channels.find(c => c.id === currentChannelId);
+    if (ch) ch.baseUrl = baseUrlInput.value.trim();
+    if (translateChannelSelect.value === currentChannelId) {
+      updateTranslateBindingStatus();
+    }
+  });
+  apiKeyInput.addEventListener("input", () => {
+    const ch = channels.find(c => c.id === currentChannelId);
+    if (ch) ch.apiKey = apiKeyInput.value.trim();
+    if (translateChannelSelect.value === currentChannelId) {
+      updateTranslateBindingStatus();
+    }
+  });
+
   // 独立测试翻译连通性
   btnTestTranslate.addEventListener("click", async () => {
-    const ch = channels.find(c => c.id === translateChannelSelect.value);
+    const channelId = translateChannelSelect.value;
+    const ch = channels.find(c => c.id === channelId);
     if (!ch) {
       showToast("⚠️ 未找到所选翻译渠道");
       return;
     }
 
-    const testUrl = (ch.baseUrl || baseUrlInput.value).replace(/\/+$/, "");
-    const testKey = ch.apiKey || (ch.id === currentChannelId ? apiKeyInput.value.trim() : "");
+    const testUrl = ((channelId === currentChannelId ? baseUrlInput.value.trim() : "") || ch.baseUrl || PRESETS[channelId]?.defaultUrl || "").replace(/\/+$/, "");
+    const testKey = (channelId === currentChannelId ? apiKeyInput.value.trim() : "") || ch.apiKey || "";
     const testModel = translateModelSelect.value === "__custom__" ? translateModelCustom.value.trim() : translateModelSelect.value;
 
     if (!testKey) {
-      showToast("⚠️ 该翻译渠道尚未设置 API Key，请先配置！");
+      showToast(`⚠️ 翻译渠道「${ch.name}」尚未配置 API Key，请先在左侧切换至该渠道输入密钥并保存！`);
+      return;
+    }
+    if (!testUrl) {
+      showToast(`⚠️ 翻译渠道「${ch.name}」缺少 Base URL！`);
       return;
     }
     if (!testModel) {
@@ -867,30 +919,26 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // ====================== H. 页面初始数据加载 ======================
-  chrome.storage.local.get([
-    "provider",
-    "baseUrl",
-    "apiKey",
-    "model",
-    "displayMode",
-    "closeStrategy",
-    "theme",
-    "popupWidth",
-    "popupHeight",
-    "overlayWidth",
-    "overlayHeight",
-    "channels",
-    "translateChannelId",
-    "translateModel",
-    "translateBatchTokens",
-    "customPrompts"
-  ], (result) => {
+  chrome.storage.local.get(null, (result) => {
     // 1. 初始化渠道数据
     if (result.channels && Array.isArray(result.channels) && result.channels.length > 0) {
       channels = result.channels;
     } else {
       channels = JSON.parse(JSON.stringify(DEFAULT_CHANNELS));
     }
+
+    // 深度补齐各个渠道可能存放在单独 key_ 或 url_ 下的配置
+    channels.forEach(ch => {
+      if (!ch.apiKey && result[`key_${ch.id}`]) {
+        ch.apiKey = result[`key_${ch.id}`];
+      }
+      if (!ch.baseUrl && result[`url_${ch.id}`]) {
+        ch.baseUrl = result[`url_${ch.id}`];
+      }
+      if (!ch.baseUrl && PRESETS[ch.id]?.defaultUrl) {
+        ch.baseUrl = PRESETS[ch.id].defaultUrl;
+      }
+    });
 
     currentChannelId = result.provider || "siliconflow";
     translateChannelId = result.translateChannelId || "siliconflow";
@@ -936,6 +984,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (result.model) currentChannel.model = result.model;
 
     loadChannelToForm(currentChannel);
+    updateTranslateBindingStatus();
   });
 
   // ====================== I. 全局保存配置 ======================
@@ -986,6 +1035,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       [`url_${provider}`]: baseUrl,
       [`model_${provider}`]: model
     };
+
+    // 为 channels 中的所有渠道均独立持久化 key 与 url
+    channels.forEach(ch => {
+      if (ch.apiKey) settings[`key_${ch.id}`] = ch.apiKey;
+      if (ch.baseUrl) settings[`url_${ch.id}`] = ch.baseUrl;
+      if (ch.model) settings[`model_${ch.id}`] = ch.model;
+    });
 
     chrome.storage.local.set(settings, () => {
       setTimeout(() => {

@@ -192,21 +192,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       let activeModel = "";
 
       const channels = cfg.channels || [];
-      const translateChannel = channels.find(c => c.id === cfg.translateChannelId);
+      const translateChannelId = cfg.translateChannelId || cfg.provider || "siliconflow";
+      const translateChannel = channels.find(c => c.id === translateChannelId);
+
+      // 默认厂商地址预设映射
+      const defaultPresetUrls = {
+        siliconflow: "https://api.siliconflow.cn/v1",
+        deepseek: "https://api.deepseek.com",
+        custom: "http://localhost:11434/v1"
+      };
 
       if (translateChannel) {
-        activeApiKey = translateChannel.apiKey || cfg.apiKey || "";
-        activeBaseUrl = translateChannel.baseUrl || cfg.baseUrl || "";
+        // 优先从渠道本身获取，其次从对应渠道独立 key 中获取，再次从全局当前 key 获取
+        activeApiKey = translateChannel.apiKey || cfg[`key_${translateChannel.id}`] || (translateChannel.id === cfg.provider ? cfg.apiKey : "") || "";
+        activeBaseUrl = translateChannel.baseUrl || cfg[`url_${translateChannel.id}`] || (translateChannel.id === cfg.provider ? cfg.baseUrl : "") || defaultPresetUrls[translateChannel.id] || "";
         activeModel = cfg.translateModel || translateChannel.model || translateChannel.defaultModel || cfg.model || "";
       } else {
         // 兜底回退到主渠道
-        activeApiKey = cfg.apiKey || "";
-        activeBaseUrl = cfg.baseUrl || "";
+        activeApiKey = cfg.apiKey || cfg[`key_${cfg.provider}`] || "";
+        activeBaseUrl = cfg.baseUrl || cfg[`url_${cfg.provider}`] || defaultPresetUrls[cfg.provider] || "https://api.siliconflow.cn/v1";
         activeModel = cfg.translateModel || cfg.model || "";
       }
 
-      if (!activeApiKey || !activeBaseUrl || !activeModel) {
-        sendResponse({ success: false, error: "请先在 LLM4Web 设置中配置网页翻译的 API Key 与模型！" });
+      if (!activeBaseUrl && defaultPresetUrls[translateChannelId]) {
+        activeBaseUrl = defaultPresetUrls[translateChannelId];
+      }
+
+      if (!activeApiKey) {
+        sendResponse({ success: false, error: `【网页翻译】所选渠道「${translateChannel?.name || translateChannelId}」尚未配置 API Key，请在设置中先保存该渠道的密钥！` });
+        return;
+      }
+      if (!activeBaseUrl) {
+        sendResponse({ success: false, error: `【网页翻译】所选渠道「${translateChannel?.name || translateChannelId}」缺少 Base URL 服务地址，请在设置中检查！` });
+        return;
+      }
+      if (!activeModel) {
+        sendResponse({ success: false, error: `【网页翻译】请在设置中选择翻译专用的模型（如 deepseek-chat 或 gpt-4o-mini）！` });
         return;
       }
 
@@ -233,12 +254,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       };
 
       try {
-        const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
-        const res = await fetch(url, {
+        const targetUrl = `${activeBaseUrl.replace(/\/+$/, "")}/chat/completions`;
+        const res = await fetch(targetUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`
+            "Authorization": `Bearer ${activeApiKey}`
           },
           body: JSON.stringify(requestBody)
         });
