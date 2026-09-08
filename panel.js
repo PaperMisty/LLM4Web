@@ -104,9 +104,27 @@ function initEmbeddedMode() {
 }
 
 // 加载 Chrome Storage 中的配置
-function loadConfig() {
-  chrome.storage.local.get(["channels", "currentChannelId", "provider", "apiKey", "baseUrl", "model", "enableThinking", "theme"], (result) => {
-    appConfig = result;
+function loadConfig(callback) {
+  chrome.storage.local.get(null, (result) => {
+    // 统一 provider 和 currentChannelId：优先以设置保存的 provider 为准
+    const currentProvider = result.provider || result.currentChannelId || "siliconflow";
+    const channels = result.channels || [];
+    const activeChannel = channels.find(c => c.id === currentProvider);
+
+    // 智能多层合并获取真实的 API Key、Base URL 与 Model
+    // 核心修复：优先取当前激活渠道自身的配置，坚决杜绝顶层失效旧配置污染
+    const activeApiKey = activeChannel?.apiKey || result[`key_${currentProvider}`] || (result.provider === currentProvider ? result.apiKey : "") || "";
+    const activeBaseUrl = activeChannel?.baseUrl || result[`url_${currentProvider}`] || (result.provider === currentProvider ? result.baseUrl : "") || PRESETS[currentProvider]?.defaultUrl || "";
+    const activeModel = activeChannel?.model || activeChannel?.defaultModel || result[`model_${currentProvider}`] || (result.provider === currentProvider ? result.model : "") || PRESETS[currentProvider]?.defaultModel || "";
+
+    appConfig = {
+      ...result,
+      provider: currentProvider,
+      currentChannelId: currentProvider,
+      apiKey: activeApiKey,
+      baseUrl: activeBaseUrl,
+      model: activeModel
+    };
     
     // 应用主题换肤（默认为 warm-amber 淡黄）
     const theme = result.theme || "warm-amber";
@@ -116,11 +134,7 @@ function loadConfig() {
     const enableThinking = result.enableThinking !== false;
     cbThinkingEl.checked = enableThinking;
 
-    const currentProvider = result.currentChannelId || result.provider || "siliconflow";
-    const currentModel = result.model || "";
-
     // 动态填充页眉渠道下拉菜单
-    const channels = result.channels || [];
     headerProviderSelect.innerHTML = "";
     if (channels.length > 0) {
       channels.forEach(ch => {
@@ -139,34 +153,31 @@ function loadConfig() {
     }
     headerProviderSelect.value = currentProvider;
 
-    const activeChannel = channels.find(c => c.id === currentProvider);
     const cacheKeyModels = `models_${currentProvider}`;
-    chrome.storage.local.get([cacheKeyModels], (modelsResult) => {
-      let modelsList = modelsResult[cacheKeyModels];
-      if (!modelsList || !Array.isArray(modelsList)) {
-        modelsList = activeChannel?.models || PRESETS[currentProvider]?.models || (activeChannel?.model ? [activeChannel.model] : []);
-      }
+    let modelsList = result[cacheKeyModels];
+    if (!modelsList || !Array.isArray(modelsList)) {
+      modelsList = activeChannel?.models || PRESETS[currentProvider]?.models || (activeModel ? [activeModel] : []);
+    }
 
-      headerModelSelect.innerHTML = "";
-      modelsList.forEach(m => {
-        const option = document.createElement("option");
-        option.value = m;
-        option.textContent = m;
-        headerModelSelect.appendChild(option);
-      });
-
-      // 如果当前模型不在列表中，动态追加
-      if (currentModel && !modelsList.includes(currentModel)) {
-        const option = document.createElement("option");
-        option.value = currentModel;
-        option.textContent = currentModel;
-        headerModelSelect.appendChild(option);
-      }
-
-      headerModelSelect.value = currentModel;
+    headerModelSelect.innerHTML = "";
+    modelsList.forEach(m => {
+      const option = document.createElement("option");
+      option.value = m;
+      option.textContent = m;
+      headerModelSelect.appendChild(option);
     });
 
-    if (!result.apiKey || !result.baseUrl || !result.model) {
+    // 如果当前模型不在列表中，动态追加
+    if (activeModel && !modelsList.includes(activeModel)) {
+      const option = document.createElement("option");
+      option.value = activeModel;
+      option.textContent = activeModel;
+      headerModelSelect.appendChild(option);
+    }
+
+    headerModelSelect.value = activeModel;
+
+    if (!activeApiKey || !activeBaseUrl || !activeModel) {
       setupWarningEl.classList.remove("hidden");
       chatInputEl.disabled = true;
       btnSendEl.disabled = true;
@@ -176,24 +187,24 @@ function loadConfig() {
       setupWarningEl.classList.add("hidden");
       chatInputEl.disabled = false;
       btnSendEl.disabled = false;
-      modelStatusEl.innerText = result.model;
+      modelStatusEl.innerText = activeModel;
       modelStatusEl.className = "model-badge";
 
       // 推理支持探测双保险：优先读取测试连接的存储缓存，如无则使用启发式命名检索兜底
-      const cacheKey = `support_thinking_${result.provider}_${result.model}`;
-      chrome.storage.local.get([cacheKey], (cacheResult) => {
-        let supportThinking = cacheResult[cacheKey];
-        if (supportThinking === undefined) {
-          supportThinking = isThinkingSupported(result.model);
-        }
+      const cacheKey = `support_thinking_${currentProvider}_${activeModel}`;
+      let supportThinking = result[cacheKey];
+      if (supportThinking === undefined) {
+        supportThinking = isThinkingSupported(activeModel);
+      }
 
-        if (supportThinking) {
-          thinkingToggleContainer.classList.remove("hidden");
-        } else {
-          thinkingToggleContainer.classList.add("hidden");
-        }
-      });
+      if (supportThinking) {
+        thinkingToggleContainer.classList.remove("hidden");
+      } else {
+        thinkingToggleContainer.classList.add("hidden");
+      }
     }
+
+    if (typeof callback === "function") callback(appConfig);
   });
 }
 
@@ -209,23 +220,22 @@ function initEventListeners() {
   // 页眉提供商/渠道选择框改变事件
   headerProviderSelect.addEventListener("change", (e) => {
     const newChannelId = e.target.value;
-    chrome.storage.local.get(["channels"], (res) => {
+    chrome.storage.local.get(null, (res) => {
       const channels = res.channels || [];
       const ch = channels.find(c => c.id === newChannelId);
-      if (ch) {
-        chrome.storage.local.set({
-          provider: newChannelId,
-          currentChannelId: newChannelId,
-          apiKey: ch.apiKey || "",
-          baseUrl: ch.baseUrl || "",
-          model: ch.model || ch.defaultModel || ""
-        });
-      } else {
-        chrome.storage.local.set({
-          provider: newChannelId,
-          currentChannelId: newChannelId
-        });
-      }
+      const newKey = ch?.apiKey || res[`key_${newChannelId}`] || "";
+      const newUrl = ch?.baseUrl || res[`url_${newChannelId}`] || PRESETS[newChannelId]?.defaultUrl || "";
+      const newModel = ch?.model || ch?.defaultModel || res[`model_${newChannelId}`] || PRESETS[newChannelId]?.defaultModel || "";
+
+      chrome.storage.local.set({
+        provider: newChannelId,
+        currentChannelId: newChannelId,
+        apiKey: newKey,
+        baseUrl: newUrl,
+        model: newModel
+      }, () => {
+        loadConfig();
+      });
     });
   });
 
@@ -236,6 +246,9 @@ function initEventListeners() {
     chrome.storage.local.set({
       model: newModel,
       [`model_${provider}`]: newModel
+    }, () => {
+      if (appConfig) appConfig.model = newModel;
+      modelStatusEl.innerText = newModel;
     });
   });
 
@@ -335,6 +348,12 @@ function checkPendingSelection() {
 // 触发解释选中文本的对话动作（已解耦为支持任意自定义 Prompt 模板）
 function triggerExplain(text, mode = "medium", prefix = "", suffix = "", promptName = "", promptTemplate = "") {
   if (!text) return;
+
+  // 关键自愈：如果上一次流式未结束或网络卡死，立即中止并重置状态，保证下一次划词 100% 能够响应
+  if (isStreaming) {
+    stopGeneration();
+  }
+
   welcomeViewEl.classList.add("hidden");
 
   // 1. 组装网页上下文提示说明（仅面向模型，不在对话框中向用户展示）
@@ -375,7 +394,7 @@ function triggerExplain(text, mode = "medium", prefix = "", suffix = "", promptN
   // 延迟一小会儿，确保 UI 已经聚焦且配置已加载完成
   setTimeout(() => {
     handleSend(apiText, uiText);
-  }, 200);
+  }, 100);
 }
 
 // 3. 处理发送消息逻辑
@@ -384,111 +403,144 @@ function handleSend(apiText = null, uiText = null) {
   const text = apiText || rawText;
   const displayText = uiText || rawText;
 
-  if (!text || isStreaming) return;
+  if (!text) return;
 
-  // 如果没有正确配置，拦截发送
-  if (!appConfig || !appConfig.apiKey || !appConfig.model) {
-    chrome.runtime.openOptionsPage();
-    return;
+  // 如果正在生成中但用户再次主动点击/回车，中止旧生成
+  if (isStreaming) {
+    stopGeneration();
   }
 
-  // 隐藏欢迎视图
-  welcomeViewEl.classList.add("hidden");
+  // 每次发送前直接从 Storage 获取当前渠道最新凭证，防止内存过期
+  chrome.storage.local.get(null, (result) => {
+    const currentProvider = headerProviderSelect.value || result.provider || result.currentChannelId || "siliconflow";
+    const channels = result.channels || [];
+    const activeChannel = channels.find(c => c.id === currentProvider);
 
-  // 在界面上渲染用户消息（显示纯净无内部指令版）
-  appendMessage("user", displayText);
+    const activeApiKey = activeChannel?.apiKey || result[`key_${currentProvider}`] || (result.provider === currentProvider ? result.apiKey : "") || "";
+    const activeBaseUrl = activeChannel?.baseUrl || result[`url_${currentProvider}`] || (result.provider === currentProvider ? result.baseUrl : "") || PRESETS[currentProvider]?.defaultUrl || "";
+    const activeModel = headerModelSelect.value || activeChannel?.model || activeChannel?.defaultModel || result[`model_${currentProvider}`] || (result.provider === currentProvider ? result.model : "") || PRESETS[currentProvider]?.defaultModel || "";
 
-  // 清空并重置输入框
-  chatInputEl.value = "";
-  chatInputEl.style.height = "auto";
-
-  // 添加到历史中（UI 洁净版，防止上下文被模板提示词污染）
-  chatHistory.push({ role: "user", content: displayText });
-
-  // 渲染 AI 消息占位框架，为流式写入做准备
-  const { bubbleElement, thoughtContentEl, textContentEl, thoughtBoxEl } = createAssistantBubbleSkeleton();
-
-  // 更新发送按钮为“停止”状态
-  setStreamingState(true);
-
-  // 建立与 Background 的长连接端口
-  currentPort = chrome.runtime.connect({ name: "chat-stream" });
-
-  let accumulatedContent = "";
-  let accumulatedReasoning = "";
-  let hasCreatedThought = false;
-
-  // 监听流式块
-  currentPort.onMessage.addListener((msg) => {
-    if (msg.type === "CHUNK") {
-      const { content, reasoningContent } = msg;
-
-      // 1. 处理思考过程
-      if (reasoningContent) {
-        accumulatedReasoning += reasoningContent;
-        if (!hasCreatedThought) {
-          // 如果是第一次输出思考内容，显示思考框
-          thoughtBoxEl.classList.remove("hidden");
-          hasCreatedThought = true;
-        }
-        thoughtContentEl.innerText = accumulatedReasoning;
-        thoughtContentEl.scrollTop = thoughtContentEl.scrollHeight; // 滚动到底部
-      }
-
-      // 2. 处理常规回复内容
-      if (content) {
-        // 如果思考框被创建了，但是思考动画还没结束（现在既然已经输出正文，说明思考完毕了）
-        if (hasCreatedThought) {
-          const spinIcon = thoughtBoxEl.querySelector(".thought-icon-spin");
-          if (spinIcon && !spinIcon.classList.contains("done")) {
-            spinIcon.classList.add("done");
-            // 思考完毕，在标题显示“已完成思考”
-            thoughtBoxEl.querySelector(".thought-title").innerText = "已完成思考";
-          }
-        }
-        accumulatedContent += content;
-        textContentEl.innerHTML = renderMarkdown(accumulatedContent);
-      }
-
-      // 去除自动滚屏逻辑以实现生成期间界面悬停
-    } else if (msg.type === "DONE") {
-      finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl, false, msg.metrics);
-    } else if (msg.type === "ERROR") {
-      setStreamingState(false);
-      textContentEl.innerHTML = `<span style="color: #ef4444;">⚠️ 发生错误: ${escapeHtml(msg.error)}</span>`;
-      currentPort.disconnect();
-    } else if (msg.type === "ABORTED") {
-      finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl, true);
-    }
-  });
-
-  // 监听端口异常断开
-  currentPort.onDisconnect.addListener(() => {
-    if (isStreaming) {
-      finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl, true);
-    }
-  });
-
-  // 在发送给 background 之前复制一份历史，把最后一条用户消息的内容替换成真实的带提示词指令版本
-  const messagesToSend = [...chatHistory];
-  if (messagesToSend.length > 0) {
-    messagesToSend[messagesToSend.length - 1] = {
-      role: "user",
-      content: text // 使用真实提示词（带 Easy/Medium/Complex 前缀）替换
+    appConfig = {
+      ...result,
+      provider: currentProvider,
+      currentChannelId: currentProvider,
+      apiKey: activeApiKey,
+      baseUrl: activeBaseUrl,
+      model: activeModel
     };
-  }
 
-  // 发送消息载荷
-  currentPort.postMessage({
-    type: "SEND_MESSAGE",
-    messages: messagesToSend,
-    config: {
-      provider: appConfig.provider,
-      apiKey: appConfig.apiKey,
-      baseUrl: appConfig.baseUrl,
-      model: appConfig.model,
-      enableThinking: cbThinkingEl.checked
+    // 检查配置是否齐全
+    if (!activeApiKey || !activeBaseUrl || !activeModel) {
+      welcomeViewEl.classList.add("hidden");
+      appendMessage("user", displayText);
+      const row = document.createElement("div");
+      row.className = "message-row assistant";
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+      bubble.innerHTML = `<span style="color: #ef4444; font-size: 13px;">⚠️ 当前渠道「${activeChannel?.name || currentProvider}」尚未完整配置 (API Key 或 Base URL 为空)。<br>请点击右上角 ⚙️ 打开设置页面填写并保存！</span>`;
+      row.appendChild(bubble);
+      chatHistoryEl.appendChild(row);
+      setStreamingState(false);
+      return;
     }
+
+    // 隐藏欢迎视图
+    welcomeViewEl.classList.add("hidden");
+
+    // 在界面上渲染用户消息（显示纯净无内部指令版）
+    appendMessage("user", displayText);
+
+    // 清空并重置输入框
+    chatInputEl.value = "";
+    chatInputEl.style.height = "auto";
+
+    // 添加到历史中（UI 洁净版，防止上下文被模板提示词污染）
+    chatHistory.push({ role: "user", content: displayText });
+
+    // 渲染 AI 消息占位框架，明确告知当前正在连接的目标与模型
+    const channelDisplayName = activeChannel?.name || currentProvider;
+    const { bubbleElement, thoughtContentEl, textContentEl, thoughtBoxEl } = createAssistantBubbleSkeleton(channelDisplayName, activeModel);
+
+    // 更新发送按钮为“停止”状态
+    setStreamingState(true);
+
+    // 建立与 Background 的长连接端口
+    currentPort = chrome.runtime.connect({ name: "chat-stream" });
+
+    let accumulatedContent = "";
+    let accumulatedReasoning = "";
+    let hasCreatedThought = false;
+
+    // 监听流式块
+    currentPort.onMessage.addListener((msg) => {
+      if (msg.type === "CHUNK") {
+        const { content, reasoningContent } = msg;
+
+        // 1. 处理思考过程
+        if (reasoningContent) {
+          accumulatedReasoning += reasoningContent;
+          if (!hasCreatedThought) {
+            thoughtBoxEl.classList.remove("hidden");
+            hasCreatedThought = true;
+          }
+          thoughtContentEl.innerText = accumulatedReasoning;
+          thoughtContentEl.scrollTop = thoughtContentEl.scrollHeight;
+        }
+
+        // 2. 处理常规回复内容
+        if (content) {
+          if (hasCreatedThought) {
+            const spinIcon = thoughtBoxEl.querySelector(".thought-icon-spin");
+            if (spinIcon && !spinIcon.classList.contains("done")) {
+              spinIcon.classList.add("done");
+              thoughtBoxEl.querySelector(".thought-title").innerText = "已完成思考";
+            }
+          }
+          accumulatedContent += content;
+          textContentEl.innerHTML = renderMarkdown(accumulatedContent);
+        }
+      } else if (msg.type === "DONE") {
+        finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl, false, msg.metrics);
+      } else if (msg.type === "ERROR") {
+        setStreamingState(false);
+        textContentEl.innerHTML = `<span style="color: #ef4444; line-height: 1.5;">⚠️ <strong>API 连接报错</strong>: ${escapeHtml(msg.error)}</span>`;
+        if (currentPort) {
+          currentPort.disconnect();
+          currentPort = null;
+        }
+      } else if (msg.type === "ABORTED") {
+        finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl, true);
+      }
+    });
+
+    // 监听端口异常断开
+    currentPort.onDisconnect.addListener(() => {
+      if (isStreaming) {
+        finishStreaming(accumulatedContent, accumulatedReasoning, thoughtBoxEl, true);
+      }
+    });
+
+    // 在发送给 background 之前复制一份历史，把最后一条用户消息的内容替换成真实的带提示词指令版本
+    const messagesToSend = [...chatHistory];
+    if (messagesToSend.length > 0) {
+      messagesToSend[messagesToSend.length - 1] = {
+        role: "user",
+        content: text
+      };
+    }
+
+    // 发送消息载荷
+    currentPort.postMessage({
+      type: "SEND_MESSAGE",
+      messages: messagesToSend,
+      config: {
+        provider: currentProvider,
+        apiKey: activeApiKey,
+        baseUrl: activeBaseUrl,
+        model: activeModel,
+        enableThinking: cbThinkingEl.checked
+      }
+    });
   });
 }
 
@@ -586,7 +638,7 @@ function appendMessage(role, text) {
 }
 
 // 创建 AI 气泡的骨架并返回各区域节点
-function createAssistantBubbleSkeleton() {
+function createAssistantBubbleSkeleton(providerName = "大模型", modelName = "") {
   const row = document.createElement("div");
   row.className = "message-row assistant";
 
@@ -621,7 +673,8 @@ function createAssistantBubbleSkeleton() {
   // 2. 正文盒模型
   const textContent = document.createElement("div");
   textContent.className = "msg-text";
-  textContent.innerHTML = `<span style="color: var(--text-muted);">正在连接 API...</span>`;
+  const displayTarget = modelName ? `连接 ${providerName} (${modelName})` : `连接 ${providerName}`;
+  textContent.innerHTML = `<span style="color: var(--text-muted); font-size: 13px;">正在${displayTarget}...</span>`;
 
   bubble.appendChild(thoughtBox);
   bubble.appendChild(textContent);

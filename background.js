@@ -250,7 +250,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           { role: "user", content: numberedText }
         ],
         stream: false,
-        temperature: 0.3
+        temperature: 0.2,
+        enable_thinking: false, // 禁用思考 (SiliconFlow / 通义千问等主流协议)
+        thinking: { type: "disabled" } // 禁用思考 (Claude / OpenAI 扩展规范)
       };
 
       try {
@@ -318,8 +320,21 @@ chrome.runtime.onConnect.addListener((port) => {
       }
 
       abortController = new AbortController();
-      const { provider, apiKey, baseUrl, model, messages, enableThinking } = msg.config;
-      const history = msg.messages;
+      const config = msg.config || {};
+      const { provider, apiKey, baseUrl, model, enableThinking } = config;
+      const history = msg.messages || [];
+
+      if (!baseUrl || !apiKey || !model) {
+        const missingFields = [];
+        if (!apiKey) missingFields.push("API Key (密钥)");
+        if (!baseUrl) missingFields.push("Base URL (接口地址)");
+        if (!model) missingFields.push("Model (模型)");
+        port.postMessage({
+          type: "ERROR",
+          error: `当前渠道 [${provider || "默认"}] 缺少必要配置：${missingFields.join("、")}，请在插件设置中填写并保存！`
+        });
+        return;
+      }
 
       // 测速与用量指标统计
       const startTime = Date.now();
@@ -329,37 +344,47 @@ chrome.runtime.onConnect.addListener((port) => {
       let totalTokensVal = 0;
       let receivedCharCount = 0;
 
+      // 30 秒超时定时器保护，防止网络握手被阻断导致无限等待
+      let isTimedOut = false;
+      const timeoutTimer = setTimeout(() => {
+        isTimedOut = true;
+        if (abortController) {
+          abortController.abort();
+        }
+        port.postMessage({
+          type: "ERROR",
+          error: `大模型请求超时（30秒未收到任何响应数据）。请检查当前渠道 [${provider}] 的服务地址是否可达、是否有网络代理限制，或在设置界面重新测试连通性！`
+        });
+      }, 30000);
+
       try {
         const requestBody = {
           model: model,
           messages: history,
-          stream: true,
-          stream_options: {
-            include_usage: true
-          }
+          stream: true
         };
 
-        // API 提供商适配逻辑
+        // 仅在已知支持的服务商开启 stream_options，提升兼容性
+        if (provider === "siliconflow" || provider === "deepseek") {
+          requestBody.stream_options = {
+            include_usage: true
+          };
+        }
+
+        // API 提供商思考模型参数适配
         if (provider === "deepseek") {
-          // DeepSeek 官方接口：新版 V4 等模型采用顶级 thinking 参数字典控制
           if (isThinkingSupported(model)) {
             requestBody.thinking = {
               type: enableThinking ? "enabled" : "disabled"
             };
           }
-        } else if (provider === "siliconflow") {
-          // 硅基流动平台继续使用原本有效的 enable_thinking 参数控制
-          if (isThinkingSupported(model)) {
-            requestBody.enable_thinking = enableThinking;
-          }
         } else {
-          // 自定义提供商兼容
           if (isThinkingSupported(model)) {
             requestBody.enable_thinking = enableThinking;
           }
         }
 
-        const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+        const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
         const response = await fetch(url, {
           method: "POST",
           headers: {
@@ -371,11 +396,12 @@ chrome.runtime.onConnect.addListener((port) => {
         });
 
         if (!response.ok) {
+          clearTimeout(timeoutTimer);
           const errText = await response.text();
           let errJson;
           try { errJson = JSON.parse(errText); } catch(e) {}
           const errMsg = errJson?.message || errJson?.error?.message || errText || `HTTP error! status: ${response.status}`;
-          port.postMessage({ type: "ERROR", error: errMsg });
+          port.postMessage({ type: "ERROR", error: `[${response.status} 错误] ${errMsg}` });
           return;
         }
 
@@ -389,6 +415,9 @@ chrome.runtime.onConnect.addListener((port) => {
             break;
           }
 
+          // 收到数据包，清除超时挂起定时器
+          clearTimeout(timeoutTimer);
+
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop();
@@ -398,7 +427,6 @@ chrome.runtime.onConnect.addListener((port) => {
             if (!trimmed) continue;
             
             if (trimmed === "data: [DONE]") {
-              // 触发完成，先发送指标
               sendDoneWithMetrics();
               continue;
             }
@@ -407,7 +435,6 @@ chrome.runtime.onConnect.addListener((port) => {
               try {
                 const data = JSON.parse(trimmed.slice(6));
                 
-                // 捕获官方返回的 usage 消耗字段
                 if (data.usage) {
                   promptTokensVal = data.usage.prompt_tokens;
                   completionTokensVal = data.usage.completion_tokens;
@@ -437,6 +464,8 @@ chrome.runtime.onConnect.addListener((port) => {
             }
           }
         }
+
+        clearTimeout(timeoutTimer);
 
         if (buffer && buffer.startsWith("data: ")) {
           try {
@@ -471,8 +500,7 @@ chrome.runtime.onConnect.addListener((port) => {
           const duration = Date.now() - startTime;
           const ttft = firstTokenTime ? (firstTokenTime - startTime) : 0;
           
-          // 如果未从数据块中拿到使用量，使用估算兜底（1汉字≈1.3token，输入打折）
-          const promptTokens = promptTokensVal || Math.round(history.reduce((acc, m) => acc + m.content.length, 0) * 1.2);
+          const promptTokens = promptTokensVal || Math.round(history.reduce((acc, m) => acc + (m.content ? m.content.length : 0), 0) * 1.2);
           const completionTokens = completionTokensVal || Math.round(receivedCharCount * 1.3);
           const totalTokens = totalTokensVal || (promptTokens + completionTokens);
           
@@ -494,12 +522,16 @@ chrome.runtime.onConnect.addListener((port) => {
         sendDoneWithMetrics();
 
       } catch (error) {
+        clearTimeout(timeoutTimer);
+        if (isTimedOut) {
+          return; // 已经发送过超时错误
+        }
         if (error.name === "AbortError") {
           console.log("请求被用户中止");
           port.postMessage({ type: "ABORTED" });
         } else {
           console.error("请求 API 失败:", error);
-          port.postMessage({ type: "ERROR", error: error.message || "请求失败，请检查网络或配置" });
+          port.postMessage({ type: "ERROR", error: error.message || "请求失败，请检查网络或服务商配置" });
         }
       }
     }

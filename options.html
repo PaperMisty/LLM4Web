@@ -287,6 +287,21 @@
               </div>
               <span class="help-text">默认 4000 tokens。系统自动将网页文本智能按段落拆包批量提交，既保持全文语义高度连贯，又兼顾并发翻译流畅度。</span>
             </div>
+
+            <!-- 异步并发流水线并发数设置 -->
+            <div class="form-group">
+              <div class="size-card-header">
+                <span class="size-card-title">⚡ 异步并发流水线并发数 (Concurrency)</span>
+                <span class="size-card-value">
+                  <input type="number" id="translate-concurrency" min="1" max="30" step="1" value="8" required>
+                  <span class="unit">路并发</span>
+                </span>
+              </div>
+              <div class="slider-wrapper">
+                <input type="range" id="translate-concurrency-range" min="1" max="30" step="1" value="8" class="modern-slider">
+              </div>
+              <span class="help-text">范围 1~30，默认 8 路并发。采用异步工作池流水线并发请求大模型，成倍提升整篇网页的翻译吞吐与完成速度。</span>
+            </div>
           </section>
 
           <!-- 2. 网页翻译代码保护机制说明 -->

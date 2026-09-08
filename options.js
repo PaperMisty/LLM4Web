@@ -155,6 +155,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const btnTestTranslate = document.getElementById("btn-test-translate");
   const translateBatchTokensInput = document.getElementById("translate-batch-tokens");
   const translateBatchTokensRange = document.getElementById("translate-batch-tokens-range");
+  const translateConcurrencyInput = document.getElementById("translate-concurrency");
+  const translateConcurrencyRange = document.getElementById("translate-concurrency-range");
 
   // 提示词相关 DOM
   const promptsListEl = document.getElementById("prompts-list");
@@ -290,6 +292,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   translateBatchTokensRange.addEventListener("input", () => {
     translateBatchTokensInput.value = translateBatchTokensRange.value;
+  });
+
+  // 翻译并发流水线双向联动
+  translateConcurrencyInput.addEventListener("input", () => {
+    translateConcurrencyRange.value = translateConcurrencyInput.value;
+  });
+  translateConcurrencyRange.addEventListener("input", () => {
+    translateConcurrencyInput.value = translateConcurrencyRange.value;
   });
 
   // ====================== C. 渠道管理与模型联动 ======================
@@ -968,6 +978,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     translateBatchTokensInput.value = batchTokens;
     translateBatchTokensRange.value = batchTokens;
 
+    const concurrency = parseInt(result.translateConcurrency) || 8;
+    translateConcurrencyInput.value = concurrency;
+    translateConcurrencyRange.value = concurrency;
+
     if (result.customPrompts && Array.isArray(result.customPrompts) && result.customPrompts.length > 0) {
       customPrompts = result.customPrompts;
     } else {
@@ -1000,6 +1014,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const finalTranslateModel = translateModelSelect.value === "__custom__" ? translateModelCustom.value.trim() : translateModelSelect.value;
     const finalTranslateTokens = parseInt(translateBatchTokensInput.value) || 4000;
+    const finalTranslateConcurrency = parseInt(translateConcurrencyInput.value) || 8;
 
     const currentMode = displayModeSelect.value;
     if (currentMode === "popup") {
@@ -1016,6 +1031,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const settings = {
       provider: provider,
+      currentChannelId: provider,
       baseUrl: baseUrl,
       apiKey: apiKey,
       model: model,
@@ -1030,6 +1046,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       translateChannelId: translateChannelSelect.value,
       translateModel: finalTranslateModel,
       translateBatchTokens: finalTranslateTokens,
+      translateConcurrency: finalTranslateConcurrency,
       customPrompts: customPrompts,
       [`key_${provider}`]: apiKey,
       [`url_${provider}`]: baseUrl,

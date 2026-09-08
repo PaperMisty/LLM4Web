@@ -347,12 +347,13 @@ function removeFloatingBtn() {
   }
 }
 
-// ================= 网页全篇智能翻译 (带上下文与原位替换) =================
+// ================= 网页全篇智能翻译 (异步并发流水线 + 5屏按需加载 + 表格与代码无损保护) =================
 let isPageTranslating = false;
 let abortPageTranslation = false;
 let isShowingOriginal = false;
 let transControlBar = null;
-let translatedElementsMap = new Map(); // id -> { el, originalHtml, translatedText }
+let translatedElementsMap = new Map(); // id -> { el, originalHtml, translatedHtml }
+let scrollListenerActive = false;
 
 // 监听扩展发送的网页翻译指令
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -362,9 +363,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// 筛选页面中可翻译的文本块（识别并保护行内 <code> 标签）
+// 筛选页面中可翻译的文本块（覆盖普通段落、标题、列表、以及表格 th/td 单元格，并严谨保护行内 <code>）
 function collectTranslatableElements() {
-  const candidateSelectors = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "dt", "dd", "figcaption"];
+  const candidateSelectors = [
+    "p", "h1", "h2", "h3", "h4", "h5", "h6",
+    "li", "blockquote", "dt", "dd", "figcaption",
+    "th", "td", "caption"
+  ];
   const nodes = document.querySelectorAll(candidateSelectors.join(","));
   const list = [];
   let currentId = 1;
@@ -380,8 +385,19 @@ function collectTranslatableElements() {
       return;
     }
 
-    // 检查元素是否可见
-    const isVisible = (node.offsetParent !== null || node.getClientRects().length > 0) && window.getComputedStyle(node).visibility !== "hidden";
+    // 针对表格单元格 td/th 的去重：如果其内部嵌套了 p 或 li 等块级标签，则由更细粒度的内部块来翻译，避免父子重复
+    const tag = node.tagName.toLowerCase();
+    if (tag === "td" || tag === "th") {
+      if (node.querySelector("p, ul, ol, blockquote, table")) {
+        return;
+      }
+    }
+
+    // 检查元素是否在文档流中可见
+    const rect = node.getBoundingClientRect();
+    const isVisible = (node.offsetParent !== null || rect.width > 0 || rect.height > 0) &&
+                      window.getComputedStyle(node).visibility !== "hidden" &&
+                      window.getComputedStyle(node).display !== "none";
     if (!isVisible) return;
 
     // 识别并保护行内 <code> 标签
@@ -390,7 +406,7 @@ function collectTranslatableElements() {
 
     const inlineCodes = node.querySelectorAll("code");
     if (inlineCodes.length > 0) {
-      // 提取所有行内 code 标签并用占位符安全替换
+      // 克隆节点提取文本，将每一个 <code> 替换为专属占位符 [__CODE_x__]
       const clone = node.cloneNode(true);
       const cloneCodes = clone.querySelectorAll("code");
       cloneCodes.forEach((cEl, idx) => {
@@ -413,11 +429,16 @@ function collectTranslatableElements() {
       return;
     }
 
+    // 记录元素在整个文档中的绝对 Y 轴偏移坐标
+    const absoluteTop = rect.top + window.scrollY;
+
     list.push({
       id: currentId++,
       el: node,
       text: textToSend,
-      codeSnippets: codeSnippets
+      codeSnippets: codeSnippets,
+      top: absoluteTop,
+      height: rect.height
     });
   });
 
@@ -441,7 +462,7 @@ function ensureTransControlBar() {
     <div class="llm4web-trans-header">
       <div class="llm4web-trans-title-area">
         <span class="llm4web-trans-icon">🌐</span>
-        <span class="llm4web-trans-title">网页全篇翻译</span>
+        <span class="llm4web-trans-title">网页全篇智能翻译</span>
       </div>
       <div class="llm4web-trans-actions">
         <button type="button" class="llm4web-trans-btn toggle-view hidden" title="在原文与译文之间切换">👁️ 切换原文</button>
@@ -449,7 +470,7 @@ function ensureTransControlBar() {
         <button type="button" class="llm4web-trans-btn close" title="关闭悬浮条">&times;</button>
       </div>
     </div>
-    <div class="llm4web-trans-status">正在分析网页正文段落...</div>
+    <div class="llm4web-trans-status">正在分析网页段落与表格内容...</div>
     <div class="llm4web-trans-progress-track">
       <div class="llm4web-trans-progress-fill" style="width: 0%;"></div>
     </div>
@@ -482,6 +503,7 @@ function ensureTransControlBar() {
   });
 
   btnClose.addEventListener("click", () => {
+    abortPageTranslation = true;
     transControlBar.remove();
     transControlBar = null;
   });
@@ -490,16 +512,16 @@ function ensureTransControlBar() {
   return transControlBar;
 }
 
-// 启动全篇翻译
+// 启动全篇翻译（并发流水线 + 5屏按需切分与滚动加载）
 async function startPageTranslation() {
   if (isPageTranslating) {
     alert("当前网页正在翻译中，请稍候...");
     return;
   }
 
-  const elements = collectTranslatableElements();
-  if (elements.length === 0) {
-    alert("未在当前网页找到可翻译的正文段落。");
+  const allElements = collectTranslatableElements();
+  if (allElements.length === 0) {
+    alert("未在当前网页找到可翻译的正文或表格内容。");
     return;
   }
 
@@ -517,50 +539,76 @@ async function startPageTranslation() {
   btnStop.disabled = false;
   btnStop.textContent = "⏹️ 停止";
 
-  const total = elements.length;
-  statusEl.textContent = `共发现 ${total} 个段落，正在结合上下文分批翻译...`;
-  progressFill.style.width = "0%";
+  const totalAll = allElements.length;
 
   // 备份原内容
-  elements.forEach(({ id, el }) => {
+  allElements.forEach(({ el }) => {
     if (!el.dataset.llm4webOriginal) {
       el.dataset.llm4webOriginal = el.innerHTML;
     }
   });
 
-  // 读取用户配置的单批次 Token 大小（默认 4000 tokens）
-  const storageSettings = await new Promise(r => chrome.storage.local.get(["translateBatchTokens"], r));
+  // 读取用户配置：单批次大小与并发数（默认 4000 tokens，并发 8 路）
+  const storageSettings = await new Promise(r => chrome.storage.local.get(["translateBatchTokens", "translateConcurrency"], r));
   const maxBatchTokens = parseInt(storageSettings?.translateBatchTokens) || 4000;
+  const concurrency = Math.min(30, Math.max(1, parseInt(storageSettings?.translateConcurrency) || 8));
 
-  // 分批打包（根据 Token 估算算法动态打包，达到用户设定的单批次容量上限时切分）
-  const batches = [];
-  let currentBatch = [];
-  let currentBatchTokens = 0;
+  // 计算当前视口与 5 个窗口大小的范围：
+  // 当前视口上方 1 屏到下方 4 屏，共 5 屏窗口高度
+  const currentScrollY = window.scrollY;
+  const viewH = window.innerHeight;
+  const initialRangeTop = Math.max(0, currentScrollY - viewH);
+  const initialRangeBottom = currentScrollY + 4 * viewH;
 
-  for (const item of elements) {
-    const itemTokens = estimateTokens(item.text);
-    if (currentBatch.length > 0 && (currentBatchTokens + itemTokens > maxBatchTokens)) {
-      batches.push(currentBatch);
-      currentBatch = [];
-      currentBatchTokens = 0;
+  // 划分阶段 1（5 屏窗口优先队列）与阶段 2（待滚动触发的延迟队列）
+  const initialQueue = [];
+  const lazyQueue = [];
+
+  allElements.forEach(item => {
+    if (item.top >= initialRangeTop && item.top <= initialRangeBottom) {
+      initialQueue.push(item);
+    } else {
+      lazyQueue.push(item);
     }
-    currentBatch.push(item);
-    currentBatchTokens += itemTokens;
-  }
-  if (currentBatch.length > 0) {
-    batches.push(currentBatch);
-  }
+  });
+
+  // 视口内优先排序：当前屏幕立即可见的排在最前，其次是下方 4 屏，最后是上方 1 屏
+  initialQueue.sort((a, b) => {
+    const aInView = (a.top >= currentScrollY && a.top <= currentScrollY + viewH);
+    const bInView = (b.top >= currentScrollY && b.top <= currentScrollY + viewH);
+    if (aInView && !bInView) return -1;
+    if (!aInView && bInView) return 1;
+    return a.top - b.top;
+  });
 
   let completedCount = 0;
+  const pendingBatches = [];
 
-  for (let i = 0; i < batches.length; i++) {
-    if (abortPageTranslation) {
-      statusEl.textContent = `⚠️ 用户已停止翻译 (已完成 ${completedCount}/${total} 段)`;
-      break;
+  // 将段落数组打包成 Batches 的辅助函数
+  function makeBatches(itemsList) {
+    const batches = [];
+    let currentBatch = [];
+    let currentBatchTokens = 0;
+
+    for (const item of itemsList) {
+      const itemTokens = estimateTokens(item.text);
+      if (currentBatch.length > 0 && (currentBatchTokens + itemTokens > maxBatchTokens)) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        currentBatchTokens = 0;
+      }
+      currentBatch.push(item);
+      currentBatchTokens += itemTokens;
     }
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
+    }
+    return batches;
+  }
 
-    const batch = batches[i];
-    statusEl.textContent = `正在翻译第 ${i + 1}/${batches.length} 批 (已完成 ${completedCount}/${total} 段)...`;
+  // 翻译单个 Batch 并原位更新 DOM
+  async function translateSingleBatch(batch) {
+    if (abortPageTranslation) return;
 
     try {
       const response = await new Promise((resolve) => {
@@ -573,11 +621,10 @@ async function startPageTranslation() {
       });
 
       if (!response || !response.success) {
-        statusEl.innerHTML = `<span style="color: #ef4444;">❌ 翻译中断: ${response ? response.error : '请求异常，请检查配置'}</span>`;
-        break;
+        console.warn("批次返回异常:", response?.error);
+        return;
       }
 
-      // 成功返回，原位替换段落并精准复原行内 <code>
       const results = response.results || [];
       const resultMap = new Map(results.map(r => [r.id, r.translatedText]));
 
@@ -586,15 +633,15 @@ async function startPageTranslation() {
         if (trans) {
           let finalHtml = "";
           if (item.codeSnippets && item.codeSnippets.length > 0) {
-            // 对外部文字做基础实体保护
+            // 对外部文字做安全转义
             let safeText = trans
               .replace(/&/g, "&amp;")
               .replace(/</g, "&lt;")
               .replace(/>/g, "&gt;");
 
-            // 精确还原 [__CODE_x__] 占位符为原有的 <code>...</code> 原始节点
+            // 严谨复原行内 <code> 节点（不区分大小写匹配占位符）
             item.codeSnippets.forEach(cs => {
-              const reg = new RegExp(`\\[\\s*__CODE_${cs.idx}__\\s*\\]`, "g");
+              const reg = new RegExp(`\\[\\s*__code_${cs.idx}__\\s*\\]`, "gi");
               safeText = safeText.replace(reg, cs.html);
             });
             finalHtml = safeText;
@@ -614,13 +661,91 @@ async function startPageTranslation() {
         completedCount++;
       });
 
-      const pct = Math.round((completedCount / total) * 100);
+      // 实时更新进度与状态
+      const pct = Math.min(100, Math.round((completedCount / totalAll) * 100));
       progressFill.style.width = `${pct}%`;
-    } catch (e) {
-      console.error("批次翻译异常:", e);
-      statusEl.innerHTML = `<span style="color: #ef4444;">❌ 翻译遇到网络异常</span>`;
-      break;
+      statusEl.textContent = `🚀 已翻译 ${completedCount}/${totalAll} 段 (${concurrency}路并发运行中)...`;
+    } catch (err) {
+      console.error("批次处理异常:", err);
     }
+  }
+
+  // 异步并发执行流水线池
+  let activeWorkers = 0;
+  async function runPipeline() {
+    const workers = [];
+    const workerCount = Math.min(concurrency, Math.max(1, pendingBatches.length));
+
+    for (let w = 0; w < workerCount; w++) {
+      workers.push((async () => {
+        while (pendingBatches.length > 0 && !abortPageTranslation) {
+          const batch = pendingBatches.shift();
+          if (batch) {
+            await translateSingleBatch(batch);
+          }
+        }
+      })());
+    }
+
+    await Promise.all(workers);
+  }
+
+  // 1. 装载并执行首批 5 屏窗口内容
+  const firstBatches = makeBatches(initialQueue);
+  pendingBatches.push(...firstBatches);
+
+  statusEl.textContent = `已定位 5 屏优先区域 (${initialQueue.length} 段)，开启 ${concurrency} 路并发流水线...`;
+  await runPipeline();
+
+  // 2. 挂载滚动监听，当下滑靠近未翻译区域时，触发下一批 5 屏的增量翻译
+  if (lazyQueue.length > 0 && !abortPageTranslation) {
+    statusEl.innerHTML = `✅ 当前 5 屏内容已翻译完成 (${completedCount}/${totalAll} 段)！向下滚动将自动无感翻译后续内容。`;
+
+    let isFetchingMore = false;
+    const checkScrollAndLoadMore = async () => {
+      if (abortPageTranslation || lazyQueue.length === 0 || isFetchingMore) return;
+
+      const scrollBottom = window.scrollY + window.innerHeight;
+      // 检查 lazyQueue 中是否有段落已经进入距离视口底部 2 屏的触发阈值内
+      const triggerThreshold = scrollBottom + 2 * window.innerHeight;
+      const nextBatchItems = [];
+
+      // 从 lazyQueue 提取在当前触发线以内的元素（按最多 5 屏视窗跨度收取）
+      const nextRangeBottom = scrollBottom + 5 * window.innerHeight;
+      for (let i = lazyQueue.length - 1; i >= 0; i--) {
+        const item = lazyQueue[i];
+        if (item.top <= nextRangeBottom) {
+          nextBatchItems.push(item);
+          lazyQueue.splice(i, 1);
+        }
+      }
+
+      if (nextBatchItems.length > 0) {
+        isFetchingMore = true;
+        nextBatchItems.sort((a, b) => a.top - b.top);
+        statusEl.textContent = `⚡ 检测到滚动，正在并发加载下一批 5 屏内容 (${nextBatchItems.length} 段)...`;
+        
+        const moreBatches = makeBatches(nextBatchItems);
+        pendingBatches.push(...moreBatches);
+        await runPipeline();
+        
+        isFetchingMore = false;
+        if (lazyQueue.length === 0) {
+          statusEl.innerHTML = `🎉 网页全篇所有段落与表格已完全翻译就绪！(共 ${completedCount} 段)`;
+          window.removeEventListener("scroll", onScrollDebounced);
+        } else {
+          statusEl.innerHTML = `✅ 已就绪 ${completedCount}/${totalAll} 段，向下滚动自动翻译下一批。`;
+        }
+      }
+    };
+
+    let scrollTimer = null;
+    const onScrollDebounced = () => {
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(checkScrollAndLoadMore, 150);
+    };
+
+    window.addEventListener("scroll", onScrollDebounced, { passive: true });
   }
 
   isPageTranslating = false;
@@ -630,8 +755,8 @@ async function startPageTranslation() {
     btnToggle.textContent = "👁️ 切换原文";
   }
 
-  if (!abortPageTranslation && completedCount >= total) {
-    statusEl.innerHTML = `✅ 网页全篇翻译完成！共翻译 ${completedCount} 个段落。`;
+  if (!abortPageTranslation && completedCount >= totalAll) {
+    statusEl.innerHTML = `✅ 网页全篇翻译完成！共翻译 ${completedCount} 个正文与表格段落。`;
     progressFill.style.width = "100%";
   }
 }
