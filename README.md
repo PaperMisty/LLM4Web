@@ -1,7 +1,7 @@
 # LLM4Web AI Assistant
 
 基于 Chrome Manifest V3 的轻量级、零依赖流式 AI 侧边栏/悬浮面板助手。支持 **SiliconFlow (硅基流动)** 与 **DeepSeek 官方** API，完美融合了 DeepSeek-R1 的思考过程展示，并支持本地离线的 Markdown 排版和 LaTeX 数学公式渲染。
-
+sk-1234567 # pragma: allowlist secret
 ---
 
 ## ✨ 核心特性

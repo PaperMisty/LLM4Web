@@ -717,10 +717,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  btnTestModel.addEventListener("click", async () => {
+  btnTestModel.addEventListener("click", () => {
     const baseUrl = baseUrlInput.value.trim().replace(/\/+$/, "");
     const apiKey = apiKeyInput.value.trim();
     const model = modelSelect.value === "__custom__" ? modelCustom.value.trim() : modelSelect.value;
+    const provider = providerSelect.value;
 
     if (!baseUrl || !apiKey || !model) {
       showToast("⚠️ 请先完整填写 Base URL、API Key 与模型");
@@ -731,32 +732,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     btnTestModel.disabled = true;
     spinner.classList.remove("hidden");
 
-    try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: "user", content: "hi" }],
-          max_tokens: 5
-        })
-      });
-
-      if (response.ok) {
-        showToast(`🎉 聊天模型连通性测试成功！(${model})`);
-      } else {
-        const errJson = await response.json().catch(() => ({}));
-        showToast(`❌ 测试失败: ${response.status} ${errJson.error?.message || response.statusText}`);
-      }
-    } catch (err) {
-      showToast(`❌ 连接失败: ${err.message}`);
-    } finally {
+    chrome.runtime.sendMessage({
+      type: "TEST_CONNECTION",
+      apiKey,
+      baseUrl,
+      model,
+      provider
+    }, (response) => {
       btnTestModel.disabled = false;
       spinner.classList.add("hidden");
-    }
+
+      if (response && response.success) {
+        const supportThinking = response.supportThinking;
+        // 将测试出的推理支持状态存储起来，用于 Panel 面板动态展现思考开关
+        const storageKey = `support_thinking_${provider}_${model}`;
+        chrome.storage.local.set({ [storageKey]: supportThinking }, () => {
+          if (supportThinking) {
+            showToast(`🟢 连接成功！检测到此模型具备思考/推理能力（已开启思考开关支持）。`);
+          } else {
+            showToast(`🟡 连接成功！未检测到此模型的推理能力（将自动隐藏思考开关）。`);
+          }
+        });
+      } else {
+        showToast(`❌ 测试失败: ${response ? response.error : "未知错误"}`);
+      }
+    });
   });
 
   // ====================== F. 划词提示词 CRUD ======================

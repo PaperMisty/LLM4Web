@@ -189,23 +189,43 @@ function loadConfig(callback) {
       btnSendEl.disabled = false;
       modelStatusEl.innerText = activeModel;
       modelStatusEl.className = "model-badge";
-
-      // 推理支持探测双保险：优先读取测试连接的存储缓存，如无则使用启发式命名检索兜底
-      const cacheKey = `support_thinking_${currentProvider}_${activeModel}`;
-      let supportThinking = result[cacheKey];
-      if (supportThinking === undefined) {
-        supportThinking = isThinkingSupported(activeModel);
-      }
-
-      if (supportThinking) {
-        thinkingToggleContainer.classList.remove("hidden");
-      } else {
-        thinkingToggleContainer.classList.add("hidden");
-      }
     }
+
+    // 智能动态显隐思考模式开关：优先根据存储缓存判定，无缓存则以启发式算法兜底
+    updateThinkingToggle(currentProvider, activeModel, result);
 
     if (typeof callback === "function") callback(appConfig);
   });
+}
+
+// 动态同步与显隐思考开关
+function updateThinkingToggle(provider, model, storageResult = null) {
+  if (!thinkingToggleContainer) return;
+  if (!model) {
+    thinkingToggleContainer.classList.add("hidden");
+    return;
+  }
+
+  const applyVisibility = (supportThinking) => {
+    if (supportThinking) {
+      thinkingToggleContainer.classList.remove("hidden");
+    } else {
+      thinkingToggleContainer.classList.add("hidden");
+    }
+  };
+
+  const cacheKey = `support_thinking_${provider}_${model}`;
+  if (storageResult && storageResult[cacheKey] !== undefined) {
+    applyVisibility(storageResult[cacheKey]);
+  } else {
+    chrome.storage.local.get([cacheKey], (res) => {
+      let supportThinking = res?.[cacheKey];
+      if (supportThinking === undefined) {
+        supportThinking = isThinkingSupported(model);
+      }
+      applyVisibility(supportThinking);
+    });
+  }
 }
 
 // 2. 绑定事件监听
@@ -249,6 +269,7 @@ function initEventListeners() {
     }, () => {
       if (appConfig) appConfig.model = newModel;
       modelStatusEl.innerText = newModel;
+      updateThinkingToggle(provider, newModel);
     });
   });
 

@@ -1,0 +1,13 @@
+# pre-commit 官方标准配置文件 (.pre-commit-config.yaml)
+# 在每次 git commit 之前自动运行本地安全扫描脚本 secret_scanner.py
+
+repos:
+  - repo: local
+    hooks:
+      - id: secret-scanner
+        name: Secret Scanner (API Key 泄露安全检测)
+        entry: python secret_scanner.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
