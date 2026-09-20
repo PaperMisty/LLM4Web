@@ -103,17 +103,23 @@ class SecretScanner:
         scannable = []
         try:
             # 使用 git 官方命令获取跟踪文件及未被忽略的未跟踪文件
+            # 必须显式增加 -c core.quotepath=off 并指定 UTF-8，否则非 ASCII（如中文文件名）会被转义成带引号的八进制导致路径无法识别
             import subprocess
             out = subprocess.check_output(
-                ["git", "ls-files", "-c", "-o", "--exclude-standard"],
+                ["git", "-c", "core.quotepath=off", "ls-files", "-c", "-o", "--exclude-standard"],
                 cwd=self.root_dir,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 stderr=subprocess.DEVNULL
             )
             for line in out.splitlines():
                 line = line.strip()
                 if not line:
                     continue
+                # 兼容可能存在的首尾引号
+                if (line.startswith('"') and line.endswith('"')) or (line.startswith("'") and line.endswith("'")):
+                    line = line[1:-1]
                 full = os.path.join(self.root_dir, line)
                 if os.path.isfile(full) and not self.is_ignored_by_extension(line):
                     scannable.append(line)

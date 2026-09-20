@@ -811,21 +811,12 @@ function renderMarkdown(text) {
   return parsedMarkdown;
 }
 
-// 启发式判断模型是否支持推理/思考
+// 判断模型是否支持推理/思考（复用全局适配层 ModelAdapter）
 function isThinkingSupported(modelName) {
+  if (typeof ModelAdapter !== "undefined" && ModelAdapter.isThinkingSupported) {
+    return ModelAdapter.isThinkingSupported(modelName);
+  }
   if (!modelName) return false;
   const name = modelName.toLowerCase();
-  const keywords = [
-    "r1",
-    "reasoner",
-    "thinking",
-    "qwq",
-    "distill",
-    "v4",      // 兼容 deepseek-v4-flash, deepseek-v4-pro 等
-    "v3.2",    // 兼容 deepseek-v3.2 等
-    "glm-5",
-    "glm-4.7",
-    "glm-4.6"
-  ];
-  return keywords.some(keyword => name.includes(keyword));
+  return ["r1", "reasoner", "thinking", "qwq", "distill"].some(kw => name.includes(kw));
 }

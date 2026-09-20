@@ -1,3 +1,5 @@
+importScripts("model_adapter.js");
+
 let popupWindowIds = new Set(); // 追踪所有打开的 popup 窗口，支持多窗口独立运行
 let lastExplainTime = 0; // 记录最近一次划词取义的触发时间戳，用于屏蔽焦点竞争导致的秒关
 
@@ -37,23 +39,9 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// 启发式判断模型是否支持推理/思考
+// 判断模型是否支持推理/思考（复用 ModelAdapter）
 function isThinkingSupported(modelName) {
-  if (!modelName) return false;
-  const name = modelName.toLowerCase();
-  const keywords = [
-    "r1",
-    "reasoner",
-    "thinking",
-    "qwq",
-    "distill",
-    "v4",      // 兼容 deepseek-v4-flash, deepseek-v4-pro 等
-    "v3.2",    // 兼容 deepseek-v3.2 等
-    "glm-5",
-    "glm-4.7",
-    "glm-4.6"
-  ];
-  return keywords.some(keyword => name.includes(keyword));
+  return ModelAdapter.isThinkingSupported(modelName);
 }
 
 // 一次性消息监听器（处理配置页面的获取模型与测试连接请求，避免跨域 CORS）
@@ -94,22 +82,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const { apiKey, baseUrl, model } = request;
     const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
 
-    // 构建极简连接测试包
-    const requestBody = {
+    // 使用模型适配层构建极简连接测试包 (默认开启思考以探测推理返回特征)
+    const requestBody = ModelAdapter.buildChatPayload({
+      provider: request.provider,
       model: model,
       messages: [{ role: "user", content: "." }],
-      max_tokens: 1,
-      stream: false
-    };
-
-    // 默认开启思考以探测返回数据中是否包含推理特征
-    if (isThinkingSupported(model)) {
-      if (request.provider === "deepseek") {
-        requestBody.thinking = { type: "enabled" };
-      } else {
-        requestBody.enable_thinking = true;
-      }
-    }
+      stream: false,
+      enableThinking: true,
+      extraOptions: { max_tokens: 1 }
+    });
 
     // 发送极其简短的单 token 测算，将消耗控制在最低且反应迅速
     fetch(url, {
@@ -251,8 +232,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         ],
         stream: false,
         temperature: 0.2,
-        enable_thinking: false, // 禁用思考 (SiliconFlow / 通义千问等主流协议)
-        thinking: { type: "disabled" } // 禁用思考 (Claude / OpenAI 扩展规范)
+        ...ModelAdapter.getDisableThinkingParams()
       };
 
       try {
@@ -358,31 +338,14 @@ chrome.runtime.onConnect.addListener((port) => {
       }, 30000);
 
       try {
-        const requestBody = {
-          model: model,
+        // 使用模型参数适配层统一构建请求体
+        const requestBody = ModelAdapter.buildChatPayload({
+          provider,
+          model,
           messages: history,
-          stream: true
-        };
-
-        // 仅在已知支持的服务商开启 stream_options，提升兼容性
-        if (provider === "siliconflow" || provider === "deepseek") {
-          requestBody.stream_options = {
-            include_usage: true
-          };
-        }
-
-        // API 提供商思考模型参数适配
-        if (provider === "deepseek") {
-          if (isThinkingSupported(model)) {
-            requestBody.thinking = {
-              type: enableThinking ? "enabled" : "disabled"
-            };
-          }
-        } else {
-          if (isThinkingSupported(model)) {
-            requestBody.enable_thinking = enableThinking;
-          }
-        }
+          stream: true,
+          enableThinking
+        });
 
         const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
         const response = await fetch(url, {

@@ -29,6 +29,7 @@
         "panel.html",
         "panel.css",
         "panel.js",
+        "model_adapter.js",
         "lib/marked.min.js",
         "lib/katex.min.js",
         "lib/katex.min.css",
