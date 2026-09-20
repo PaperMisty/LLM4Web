@@ -85,24 +85,62 @@ const ModelAdapter = (function () {
       };
     }
 
-    // 5. Custom / OneAPI / NewAPI / 其它聚合中转
-    // 注入双重兼容协议，确保下游无论映射到哪个渠道都能识别
+    // 5. Google / Gemini 系列规范 (针对 Gemini 3.7 / 3.5 / 2.5 系列通过中转调用的思考透传控制)
+    if (prov === "gemini" || (model && model.toLowerCase().includes("gemini"))) {
+      const level = enableThinking ? "medium" : "low";
+      return {
+        reasoning_effort: level,
+        think_budget: level,
+        thinking_budget: level,
+        thinking_config: {
+          thinking_level: level,
+          include_thoughts: Boolean(enableThinking)
+        },
+        extra_body: {
+          google: {
+            thinking_config: {
+              thinking_level: level
+            }
+          }
+        }
+      };
+    }
+
+    // 6. Custom / OneAPI / NewAPI / 其它聚合中转
+    // 注入全方位兼容协议，确保下游无论映射到哪个渠道都能识别
     return {
       enable_thinking: Boolean(enableThinking),
       thinking: {
         type: enableThinking ? "enabled" : "disabled"
-      }
+      },
+      reasoning_effort: enableThinking ? "medium" : "low",
+      think_budget: enableThinking ? "medium" : "low",
+      thinking_budget: enableThinking ? "medium" : "low"
     };
   }
 
   /**
-   * 构造“强制关闭思考”的入参 (主要用于网页翻译、格式化提取等追求低延迟的确定性场景)
+   * 构造“强制关闭/最低思考”的入参 (主要用于网页翻译、格式化提取等追求低延迟的确定性场景)
    * @returns {Object}
    */
   function getDisableThinkingParams() {
     return {
       enable_thinking: false,
-      thinking: { type: "disabled" }
+      thinking: { type: "disabled" },
+      reasoning_effort: "low",
+      think_budget: "low",
+      thinking_budget: "low",
+      thinking_config: {
+        thinking_level: "low",
+        include_thoughts: false
+      },
+      extra_body: {
+        google: {
+          thinking_config: {
+            thinking_level: "low"
+          }
+        }
+      }
     };
   }
 

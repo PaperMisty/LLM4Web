@@ -16,6 +16,9 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
+# 强制禁止生成 __pycache__ 缓存目录，防止 Chrome 扩展无法加载
+sys.dont_write_bytecode = True
+
 
 class SecretScanner:
     """

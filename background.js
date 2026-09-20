@@ -237,6 +237,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
       try {
         const targetUrl = `${activeBaseUrl.replace(/\/+$/, "")}/chat/completions`;
+        console.log(`[LLM4Web 网页翻译] 发往目标地址: ${targetUrl} | 模型: ${activeModel}`);
         const res = await fetch(targetUrl, {
           method: "POST",
           headers: {

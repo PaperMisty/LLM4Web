@@ -621,7 +621,11 @@ async function startPageTranslation() {
       });
 
       if (!response || !response.success) {
-        console.warn("批次返回异常:", response?.error);
+        const errMsg = response?.error || "上游接口未授权 (401) 或服务异常";
+        console.error("批次返回异常:", errMsg);
+        statusEl.innerHTML = `<span style="color: #ef4444; font-weight: bold;">❌ 翻译失败: ${errMsg}</span>`;
+        progressFill.style.backgroundColor = "#ef4444";
+        abortPageTranslation = true; // 终止后续批次，防止虚假显示完成
         return;
       }
 
