@@ -400,14 +400,18 @@ function collectTranslatableElements() {
                       window.getComputedStyle(node).display !== "none";
     if (!isVisible) return;
 
-    // 识别并保护行内 <code> 标签
+    // 识别并保护行内 <code> 标签与 <a> 超链接标签
     const codeSnippets = [];
+    const linkSnippets = [];
     let textToSend = "";
 
     const inlineCodes = node.querySelectorAll("code");
-    if (inlineCodes.length > 0) {
-      // 克隆节点提取文本，将每一个 <code> 替换为专属占位符 [__CODE_x__]
+    const inlineLinks = node.querySelectorAll("a");
+
+    if (inlineCodes.length > 0 || inlineLinks.length > 0) {
       const clone = node.cloneNode(true);
+
+      // 1. 先保护行内 <code>（将其替换为 [__CODE_x__] 占位符）
       const cloneCodes = clone.querySelectorAll("code");
       cloneCodes.forEach((cEl, idx) => {
         const placeholder = `[__CODE_${idx}__]`;
@@ -419,6 +423,30 @@ function collectTranslatableElements() {
         const textNode = document.createTextNode(placeholder);
         cEl.parentNode.replaceChild(textNode, cEl);
       });
+
+      // 2. 再保护 <a> 超链接（提取 openTag 保留 href/target/class 等全部属性，包装为成对 [__L0__]链接文本[__/L0__]）
+      const cloneLinks = clone.querySelectorAll("a");
+      cloneLinks.forEach((aEl, idx) => {
+        const startTag = `[__L${idx}__]`;
+        const endTag = `[__/L${idx}__]`;
+
+        const wrapper = document.createElement("div");
+        const aClone = aEl.cloneNode(false);
+        wrapper.appendChild(aClone);
+        const openTagHtml = wrapper.innerHTML.replace(/<\/a>$/i, "");
+
+        linkSnippets.push({
+          idx: idx,
+          openTag: openTagHtml,
+          closeTag: "</a>"
+        });
+
+        const linkInner = aEl.innerText ? aEl.innerText.trim() : "";
+        const replacementText = `${startTag}${linkInner}${endTag}`;
+        const textNode = document.createTextNode(replacementText);
+        aEl.parentNode.replaceChild(textNode, aEl);
+      });
+
       textToSend = clone.innerText ? clone.innerText.trim() : "";
     } else {
       textToSend = node.innerText ? node.innerText.trim() : "";
@@ -437,6 +465,7 @@ function collectTranslatableElements() {
       el: node,
       text: textToSend,
       codeSnippets: codeSnippets,
+      linkSnippets: linkSnippets,
       top: absoluteTop,
       height: rect.height
     });
@@ -507,6 +536,62 @@ function ensureTransControlBar() {
     transControlBar.remove();
     transControlBar = null;
   });
+
+  // 绑定鼠标自由拖拽逻辑 (按住顶部把手可将浮动条拖到屏幕任意位置，避免遮挡内容)
+  const headerEl = transControlBar.querySelector(".llm4web-trans-header");
+  let isDragging = false;
+  let startX = 0, startY = 0;
+  let initialLeft = 0, initialTop = 0;
+
+  headerEl.addEventListener("mousedown", (e) => {
+    if (e.target.closest("button")) return;
+
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+
+    const rect = transControlBar.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
+
+    transControlBar.style.setProperty("right", "auto", "important");
+    transControlBar.style.setProperty("bottom", "auto", "important");
+    transControlBar.style.setProperty("left", `${initialLeft}px`, "important");
+    transControlBar.style.setProperty("top", `${initialTop}px`, "important");
+
+    headerEl.style.cursor = "grabbing";
+    e.preventDefault();
+  });
+
+  const onMouseMove = (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    const barWidth = transControlBar.offsetWidth || 320;
+    const barHeight = transControlBar.offsetHeight || 90;
+
+    const minX = 10;
+    const maxX = Math.max(10, window.innerWidth - barWidth - 10);
+    const minY = 10;
+    const maxY = Math.max(10, window.innerHeight - barHeight - 10);
+
+    const targetX = Math.max(minX, Math.min(maxX, initialLeft + dx));
+    const targetY = Math.max(minY, Math.min(maxY, initialTop + dy));
+
+    transControlBar.style.setProperty("left", `${targetX}px`, "important");
+    transControlBar.style.setProperty("top", `${targetY}px`, "important");
+  };
+
+  const onMouseUp = () => {
+    if (isDragging) {
+      isDragging = false;
+      headerEl.style.cursor = "grab";
+    }
+  };
+
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
 
   document.body.appendChild(transControlBar);
   return transControlBar;
@@ -636,18 +721,37 @@ async function startPageTranslation() {
         const trans = resultMap.get(item.id);
         if (trans) {
           let finalHtml = "";
-          if (item.codeSnippets && item.codeSnippets.length > 0) {
+          const hasCode = item.codeSnippets && item.codeSnippets.length > 0;
+          const hasLinks = item.linkSnippets && item.linkSnippets.length > 0;
+
+          if (hasCode || hasLinks) {
             // 对外部文字做安全转义
             let safeText = trans
               .replace(/&/g, "&amp;")
               .replace(/</g, "&lt;")
               .replace(/>/g, "&gt;");
 
-            // 严谨复原行内 <code> 节点（不区分大小写匹配占位符）
-            item.codeSnippets.forEach(cs => {
-              const reg = new RegExp(`\\[\\s*__code_${cs.idx}__\\s*\\]`, "gi");
-              safeText = safeText.replace(reg, cs.html);
-            });
+            // 1. 优先严谨复原 <a> 超链接（保留全部属性并允许内部文字翻译成中文）
+            if (hasLinks) {
+              item.linkSnippets.forEach(ls => {
+                const reg = new RegExp(`\\[\\s*__L${ls.idx}__\\s*\\]([\\s\\S]*?)\\[\\s*__\\/L${ls.idx}__\\s*\\]`, "gi");
+                safeText = safeText.replace(reg, (match, innerContent) => {
+                  return `${ls.openTag}${innerContent.trim()}${ls.closeTag}`;
+                });
+                // 容错兜底：防止模型破坏成对标签时丢链接
+                safeText = safeText.replace(new RegExp(`\\[\\s*__L${ls.idx}__\\s*\\]`, "gi"), ls.openTag);
+                safeText = safeText.replace(new RegExp(`\\[\\s*__\\/L${ls.idx}__\\s*\\]`, "gi"), ls.closeTag);
+              });
+            }
+
+            // 2. 严谨复原行内 <code> 节点
+            if (hasCode) {
+              item.codeSnippets.forEach(cs => {
+                const reg = new RegExp(`\\[\\s*__code_${cs.idx}__\\s*\\]`, "gi");
+                safeText = safeText.replace(reg, cs.html);
+              });
+            }
+
             finalHtml = safeText;
             item.el.innerHTML = finalHtml;
           } else {

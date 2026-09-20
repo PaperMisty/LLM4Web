@@ -180,6 +180,12 @@
   align-items: center !important;
   justify-content: space-between !important;
   margin-bottom: 8px !important;
+  cursor: grab !important;
+  padding: 2px 0 !important;
+}
+
+.llm4web-trans-header:active {
+  cursor: grabbing !important;
 }
 
 .llm4web-trans-title-area {
