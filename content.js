@@ -363,44 +363,111 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// 筛选页面中可翻译的文本块（覆盖普通段落、标题、列表、以及表格 th/td 单元格，并严谨保护行内 <code>）
+// 深度可见性校验：不仅检查自身，还递归检查祖先，杜绝提取未展开的下拉菜单或隐藏折叠层
+function isElementVisible(node) {
+  if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+
+  // 1. 显式隐藏属性或类
+  if (node.hasAttribute("hidden")) return false;
+  if (node.classList && (node.classList.contains("hidden") || node.classList.contains("sr-only"))) {
+    return false;
+  }
+
+  // 2. 自身计算样式与几何尺寸检查
+  const rect = node.getBoundingClientRect();
+  const style = window.getComputedStyle(node);
+  if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity) === 0) {
+    return false;
+  }
+
+  // 如果宽高均为 0，视为不可见
+  if (rect.width === 0 && rect.height === 0) {
+    return false;
+  }
+
+  // 3. 递归向上检查关键祖先是否处于隐藏状态（防止未展开的下拉菜单或侧边抽屉内的元素被误判为可见）
+  let parent = node.parentElement;
+  let depth = 0;
+  while (parent && parent !== document.body && depth < 10) {
+    if (parent.hasAttribute("hidden")) return false;
+    if (parent.classList && (parent.classList.contains("hidden") || parent.classList.contains("sr-only"))) {
+      return false;
+    }
+    const pStyle = window.getComputedStyle(parent);
+    if (pStyle.display === "none" || pStyle.visibility === "hidden" || parseFloat(pStyle.opacity) === 0) {
+      return false;
+    }
+    parent = parent.parentElement;
+    depth++;
+  }
+
+  return true;
+}
+
+// 块级子元素选择器，用于识别复合容器并避免破坏复合结构
+const BLOCK_CHILDREN_SELECTOR = "div, p, ul, ol, li, table, section, article, aside, nav, header, footer, main, h1, h2, h3, h4, h5, h6, blockquote, form, details";
+
+// 筛选页面中可翻译的文本块（覆盖普通段落、现代网页的 span/a/div 文本块、标题、列表及表格单元格）
 function collectTranslatableElements() {
   const candidateSelectors = [
     "p", "h1", "h2", "h3", "h4", "h5", "h6",
     "li", "blockquote", "dt", "dd", "figcaption",
-    "th", "td", "caption"
+    "th", "td", "caption",
+    "span", "a", "div", "label", "b", "strong", "em"
   ];
-  const nodes = document.querySelectorAll(candidateSelectors.join(","));
-  const list = [];
-  let currentId = 1;
 
-  nodes.forEach((node) => {
-    // 排除插件自身控件与代码块、脚本、交互元素
+  const rawNodes = document.querySelectorAll(candidateSelectors.join(","));
+  const candidateElements = [];
+
+  rawNodes.forEach((node) => {
+    // 1. 排除插件自身控件、代码块、脚本、交互输入控件、SVG 和富媒体
     if (node.closest(".llm4web-overlay, .llm4web-floating-bar, .llm4web-trans-bar, pre, script, style, noscript, svg, button, input, textarea, select, option, iframe")) {
       return;
     }
 
-    // 排除含有大块 pre 代码块的节点
+    // 排除含有 pre 代码块的节点
     if (node.tagName.toLowerCase() === "pre" || node.querySelector("pre")) {
       return;
     }
 
-    // 针对表格单元格 td/th 的去重：如果其内部嵌套了 p 或 li 等块级标签，则由更细粒度的内部块来翻译，避免父子重复
-    const tag = node.tagName.toLowerCase();
-    if (tag === "td" || tag === "th") {
-      if (node.querySelector("p, ul, ol, blockquote, table")) {
-        return;
-      }
+    // 2. 深度可见性校验（排除未展开的下拉菜单、隐藏标签页等）
+    if (!isElementVisible(node)) {
+      return;
     }
 
-    // 检查元素是否在文档流中可见
-    const rect = node.getBoundingClientRect();
-    const isVisible = (node.offsetParent !== null || rect.width > 0 || rect.height > 0) &&
-                      window.getComputedStyle(node).visibility !== "hidden" &&
-                      window.getComputedStyle(node).display !== "none";
-    if (!isVisible) return;
+    // 3. 排除含有块级子结构的复合容器（保留给其内部更细粒度的原子文本块）
+    // 例如：包含 div, p, ul 等的 li 或 div，不作为单一块提取，避免破坏子结构和产生粘连
+    if (node.querySelector(BLOCK_CHILDREN_SELECTOR)) {
+      return;
+    }
 
-    // 识别并保护行内 <code> 标签与 <a> 超链接标签
+    // 4. 获取当前节点的纯文本内容并做质量过滤
+    const rawText = node.innerText ? node.innerText.trim() : "";
+    if (rawText.length < 2) return;
+
+    // 必须包含实质性字母语言（英文或其他有效文字），排除纯数字、时间、图标符号
+    if (!/[a-zA-Z\p{L}]/u.test(rawText)) return;
+    // 排除纯数字、纯标点、纯符号组合（如 "45", "278", "2026-09-20", "• / -"）
+    if (/^[\d\s.,/:\-+–—()•·|¥$€#@&]+$/.test(rawText)) return;
+
+    candidateElements.push(node);
+  });
+
+  // 5. 父子去重：如果父子两个节点都入选，且子节点的文本涵盖了父节点的有效文本，优先保留子节点
+  const candidateSet = new Set(candidateElements);
+  const dedupedNodes = candidateElements.filter((node) => {
+    // 检查是否有子孙节点也在 candidateSet 中且文本基本相同
+    const hasChildCandidate = Array.from(node.querySelectorAll("*")).some(child => 
+      candidateSet.has(child) && child.innerText && child.innerText.trim() === node.innerText.trim()
+    );
+    return !hasChildCandidate;
+  });
+
+  const list = [];
+  let currentId = 1;
+
+  dedupedNodes.forEach((node) => {
+    const rect = node.getBoundingClientRect();
     const codeSnippets = [];
     const linkSnippets = [];
     let textToSend = "";
@@ -452,8 +519,8 @@ function collectTranslatableElements() {
       textToSend = node.innerText ? node.innerText.trim() : "";
     }
 
-    // 排除过短、纯数字或无语言字符
-    if (textToSend.length < 2 || !/[\p{L}\p{N}]/u.test(textToSend)) {
+    // 排除过短或无语言字符
+    if (textToSend.length < 2 || !/[a-zA-Z\p{L}]/u.test(textToSend)) {
       return;
     }
 
@@ -755,8 +822,13 @@ async function startPageTranslation() {
             finalHtml = safeText;
             item.el.innerHTML = finalHtml;
           } else {
-            item.el.innerText = trans;
-            finalHtml = item.el.innerHTML;
+            if (item.el.children.length === 0) {
+              item.el.textContent = trans;
+              finalHtml = item.el.innerHTML;
+            } else {
+              item.el.innerText = trans;
+              finalHtml = item.el.innerHTML;
+            }
           }
 
           item.el.classList.add("llm4web-translated-node");
