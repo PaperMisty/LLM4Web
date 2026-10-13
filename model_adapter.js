@@ -108,14 +108,16 @@ const ModelAdapter = (function () {
 
     // 6. Custom / OneAPI / NewAPI / 其它聚合中转
     // 注入全方位兼容协议，确保下游无论映射到哪个渠道都能识别
+    // 注意：不要在这里放 think_budget / thinking_budget —— 这些字段在部分厂商
+    // (如阿里百炼 DashScope) 是真实存在的整型参数 (思考 token 上限)，
+    // 传字符串 ("medium"/"low") 会触发服务端 pydantic 校验 400
+    // (Input should be a valid integer)；其它厂商要么忽略未知字段，要么不校验。
     return {
       enable_thinking: Boolean(enableThinking),
       thinking: {
         type: enableThinking ? "enabled" : "disabled"
       },
-      reasoning_effort: enableThinking ? "medium" : "low",
-      think_budget: enableThinking ? "medium" : "low",
-      thinking_budget: enableThinking ? "medium" : "low"
+      reasoning_effort: enableThinking ? "medium" : "low"
     };
   }
 
@@ -124,12 +126,12 @@ const ModelAdapter = (function () {
    * @returns {Object}
    */
   function getDisableThinkingParams() {
+    // 注意：不放 think_budget / thinking_budget 字符串值，原因同 getThinkingParams
+    // (阿里百炼等厂商将其校验为整型，字符串会直接 400)
     return {
       enable_thinking: false,
       thinking: { type: "disabled" },
       reasoning_effort: "low",
-      think_budget: "low",
-      thinking_budget: "low",
       thinking_config: {
         thinking_level: "low",
         include_thoughts: false
